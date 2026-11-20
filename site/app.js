@@ -55,7 +55,11 @@
     nlc: "Look low in the north after sunset. Blue shows a clear northern sky; white is cloud.",
   };
 
-  var $ = function (id) { return document.getElementById(id); };
+  // A missing element (e.g. a cached page from another version) gives a harmless stand-in, never a crash.
+  var STUB = { hidden: true, dataset: {}, style: {}, textContent: "", value: "", disabled: false,
+    addEventListener: function () {}, setAttribute: function () {}, getAttribute: function () { return null; },
+    appendChild: function () {}, querySelector: function () { return null; }, focus: function () {} };
+  var $ = function (id) { return document.getElementById(id) || STUB; };
 
   // localStorage can throw (private browsing, blocked storage): never let it stop the page.
   var store = {
@@ -306,7 +310,8 @@
     document.body.classList.toggle("full", on);
     var b = $("btn-full");
     b.setAttribute("aria-pressed", String(on));
-    b.querySelector("span").textContent = on ? "Exit full screen" : "Full screen";
+    var label = b.querySelector("span");
+    if (label) label.textContent = on ? "Exit full screen" : "Full screen";
     b.title = on ? "Exit full screen" : "Full screen";
     if (map) setTimeout(function () { map.invalidateSize({ animate: false }); }, 60);
   }

@@ -26,3 +26,14 @@ try {
   console.log("FAILED:", e.message);
   process.exitCode = 1;
 }
+
+// NOAA space weather feeds the Aurora tab reads in the browser: do they allow it (CORS)?
+for (const path of ["/products/noaa-planetary-k-index.json", "/products/noaa-planetary-k-index-forecast.json",
+  "/json/planetary_k_index_1m.json", "/json/rtsw/rtsw_mag_1m.json", "/json/rtsw/rtsw_wind_1m.json"]) {
+  try {
+    const r = await fetch("https://services.swpc.noaa.gov" + path, { headers: { Origin: "https://justmoosinaround.github.io" } });
+    const j = await r.json();
+    const last = Array.isArray(j) ? j[j.length - 1] : j;
+    console.log("NOAA", path, r.status, "CORS:", r.headers.get("access-control-allow-origin"), "rows", Array.isArray(j) ? j.length : "-", JSON.stringify(last).slice(0, 160));
+  } catch (e) { console.log("NOAA", path, "FAILED", e.message); }
+}

@@ -7,15 +7,53 @@
   var ZONE = "America/Anchorage";
   var EXTENT = { south: 59.4, north: 64.1, west: -153.3, east: -145.8 };
   var PAD = 0.5;
+  var START = [[60.85, -150.75], [61.75, -148.85]];   // Anchorage, the Mat-Su and upper Turnagain Arm
+  var HOME = [61.2181, -149.9003];                      // default sun pin: downtown Anchorage
   var TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
   var OSM_CREDIT = '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors';
+  var DETAIL_ZOOM = 9;          // OpenStreetMap detail (roads, place names) from this zoom in
   var STORE_KEY = "skymap.tab";
-  var DOT_OPACITY = 0.85;
+  var PIN_KEY = "skymap.pin";
+  var FIELD_OPACITY = 0.92;
   var STALE_OPACITY = 0.4;
-  // Grey "no good" dots are drawn mostly see-through so the base map stays readable.
-  var FAINT_KINDS = { blocked: 1, partly: 1, cloudy: 1, patchy: 1 };
-  var FAINT_FILL = 0.3;
-  var DEFAULT_SPACING_KM = 5;
+  var R_KM = 6371;
+  var RAD = Math.PI / 180;
+
+  // Colour layer per forecast kind: [r, g, b, base alpha, alpha added at the best quality].
+  // Cloud is drawn white-grey like Windy's cloud layer; colour kinds get stronger as they get better.
+  var STYLE = {
+    blocked:   [236, 239, 244, 0.52, 0.00],
+    partly:    [190, 197, 208, 0.38, 0.00],
+    plain:     [242, 196, 48, 0.42, 0.40],
+    alpenglow: [255, 122, 61, 0.45, 0.50],
+    lit:       [236, 72, 128, 0.47, 0.50],
+    ceiling:   [150, 128, 255, 0.47, 0.50],
+    cloudy:    [236, 239, 244, 0.50, 0.00],
+    patchy:    [190, 197, 208, 0.38, 0.00],
+    north:     [40, 190, 140, 0.30, 0.50],
+    twilight:  [76, 155, 232, 0.28, 0.45],
+    dark:      [70, 226, 156, 0.40, 0.55],
+    nlc:       [90, 200, 255, 0.40, 0.55],
+    // Denali View: chance the mountain shows
+    hidden:    [5, 8, 13, 0.50, 0.00],
+    d0:        [236, 239, 244, 0.52, 0.00],
+    d50:       [127, 209, 255, 0.55, 0.00],
+    d100:      [62, 224, 165, 0.78, 0.00],
+  };
+  var KEYS = {
+    sky: [["blocked", "Cloud in the way"], ["partly", "Partly"], ["plain", "Clear, plain"], ["alpenglow", "Alpenglow"],
+          ["lit", "Lit clouds"], ["ceiling", "Fire"]],
+    aurora: [["cloudy", "Cloudy"], ["patchy", "Patchy"], ["twilight", "Twilight"], ["north", "Clear north"],
+             ["dark", "Clear and dark"]],
+    nlc: [["cloudy", "Cloudy"], ["nlc", "Northern sky clear"]],
+  };
+  KEYS.meteor = KEYS.aurora;
+  KEYS.denali = [["hidden", "Hills in the way"], ["d0", "Cloud in the way"], ["d50", "Maybe"], ["d100", "Clear view"]];
+  var NIGHT_HINT = {
+    aurora: "Look north. Green and blue show clear, dark sky; white is cloud.",
+    meteor: "Green and blue show clear, dark sky; white is cloud.",
+    nlc: "Look low in the north after sunset. Blue shows a clear northern sky; white is cloud.",
+  };
 
   var $ = function (id) { return document.getElementById(id); };
 
@@ -52,22 +90,9 @@
   function capital(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
   // ---- State ----------------------------------------------------------------
-  var index, map, renderer, dotLayer, tabFiles = {}, current = null, loadToken = 0;
-  var markers = [];   // [{dot, fill, ring}]
-  var opacity = DOT_OPACITY;
-
-  // On-screen px between neighbouring grid dots (dot_spacing_km east-west at the map centre).
-  // map.project is unrounded; latLngToContainerPoint would round to whole pixels.
-  function spacingPx() {
-    var km = (index && index.dot_spacing_km) || DEFAULT_SPACING_KM;
-    var c = map.getCenter();
-    var dLon = km / (111.32 * Math.cos(c.lat * Math.PI / 180));
-    return map.project([c.lat, c.lng + dLon]).x - map.project(c).x;
-  }
-  function radiusFor(q, spacing) {
-    return Math.max(1.5, Math.min(14, spacing * (0.12 + 0.36 * Math.sqrt(q))));
-  }
-  function ringGap(spacing) { return Math.max(1.5, 0.15 * spacing); }
+  var index, map, tabFiles = {}, current = null, loadToken = 0;
+  var fieldLayer = null, pointsLayer, sunLayer, detailLayers, pin;
+  var opacity = FIELD_OPACITY, showPoints = false, showSun = true;
 
   // ---- Start ----------------------------------------------------------------
   fetch("data/index.json", { cache: "no-store" })
@@ -99,8 +124,8 @@
       stale.hidden = false;
     }
 
-    // Everything above the map (tabs, "when" line, banner) is laid out before the map exists: the map box
-    // is flex:1, and Leaflet fits the view to the size it measures when it is created.
+    // Everything above the map is laid out before the map exists: the map box is flex:1,
+    // and Leaflet fits the view to the size it measures when it is created.
     var tabs = data.tabs || [];
     var nav = $("tabs");
     tabs.forEach(function (tab) {
@@ -128,7 +153,7 @@
 
     $("map-wrap").hidden = false;
     setupMap();
-    setupLegend();
+    setupControls();
     addSpots(data.spots || []);
     if (!chosen) { showNote("No forecast maps are available right now."); return; }
     showTab(chosen, false);
@@ -154,25 +179,124 @@
     }
   }
 
+  // ---- Map and base map --------------------------------------------------------
   function setupMap() {
     var bounds = L.latLngBounds([EXTENT.south, EXTENT.west], [EXTENT.north, EXTENT.east]);
     var maxBounds = L.latLngBounds([EXTENT.south - PAD, EXTENT.west - PAD], [EXTENT.north + PAD, EXTENT.east + PAD]);
-    renderer = L.canvas({ padding: 0.5 });
     map = L.map("map", {
-      renderer: renderer, minZoom: 0, maxZoom: 12, zoomSnap: 0.25, zoomDelta: 1,
+      minZoom: 0, maxZoom: 12, zoomSnap: 0.25, zoomDelta: 1,
       maxBounds: maxBounds, maxBoundsViscosity: 1, preferCanvas: true,
     });
     map.attributionControl.setPrefix('<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>');
-    L.tileLayer(TILES, { maxZoom: 12, attribution: OSM_CREDIT }).addTo(map);
-    // Zoom 6 normally, lower when that is the only way the whole area fits (a phone is narrower than z6).
+    map.zoomControl.setPosition("bottomright");
+    // Panes, bottom to top: our land, OSM detail tiles (close zoom), hillshade, coast/roads, colour layer,
+    // points, base labels, spots (marker pane), sun line.
+    [["land", 150], ["shade", 250], ["lines", 260], ["field", 410], ["points", 420], ["labels", 430], ["sun", 650], ["pin", 660]]
+      .forEach(function (p) { map.createPane(p[0]).style.zIndex = p[1]; });
+    ["land", "shade", "lines", "field", "points", "labels", "sun"].forEach(function (p) { map.getPane(p).style.pointerEvents = "none"; });
+
+    // Whole area at the lowest zoom (a phone is narrower than zoom 6); start close to Anchorage.
     map.setMinZoom(Math.min(6, map.getBoundsZoom(bounds)));
-    map.fitBounds(bounds, { animate: false });
+    map.fitBounds(START, { animate: false });
     if (window.ResizeObserver) {
       new ResizeObserver(function () { map.invalidateSize({ animate: false }); }).observe($("map"));
     }
-    dotLayer = L.layerGroup().addTo(map);
-    map.on("zoomend", resizeDots);
+    L.tileLayer(TILES, { minZoom: DETAIL_ZOOM, maxZoom: 12, attribution: OSM_CREDIT }).addTo(map);
+    L.imageOverlay("assets/hillshade.png", bounds, { pane: "shade", interactive: false, opacity: 0.85 }).addTo(map);
+    detailLayers = L.layerGroup();   // our own coast, roads and labels: hidden once OSM detail shows
+    fetch("assets/basemap.json").then(function (r) { return r.json(); }).then(drawBase, function () { /* sea + hillshade only */ });
+
+    pointsLayer = L.layerGroup().addTo(map);
+    sunLayer = L.layerGroup().addTo(map);
+    map.on("click", onTap);
+    map.on("zoomend", toggleDetail);
     window.skyMap = map;   // handy for tests and debugging
+  }
+
+  function drawBase(base) {
+    var layer = function (name) {
+      return { type: "FeatureCollection", features: (base.features || []).filter(function (f) { return f.properties && f.properties.layer === name; }) };
+    };
+    var css = getComputedStyle(document.documentElement);
+    L.geoJSON(layer("land"), { pane: "land", interactive: false,
+      style: { stroke: false, fillColor: css.getPropertyValue("--land").trim(), fillOpacity: 1 } }).addTo(map);
+    L.geoJSON(layer("lake"), { pane: "land", interactive: false,
+      style: { stroke: false, fillColor: css.getPropertyValue("--sea").trim(), fillOpacity: 1 } }).addTo(map);
+    L.geoJSON(layer("land"), { pane: "lines", interactive: false, style: { color: "#4b5d77", weight: 0.8, fill: false } }).addTo(detailLayers);
+    L.geoJSON(layer("road"), { pane: "lines", interactive: false, style: { color: "#8a6f52", weight: 1.2, opacity: 0.7 } }).addTo(detailLayers);
+    (base.towns || TOWNS).forEach(function (t) { label(t[0], t[1], t[2], "town", [3, 7]); });
+    PEAKS.forEach(function (p) { label("▲ " + p[0], p[1], p[2], "peak", [5, 7]); });
+    toggleDetail();
+  }
+  function label(text, lat, lon, cls, anchor) {
+    var node = el("span", null, text);
+    L.marker([lat, lon], { pane: "labels", interactive: false, keyboard: false,
+      icon: L.divIcon({ className: cls, html: node, iconSize: null, iconAnchor: anchor }) }).addTo(detailLayers);
+  }
+  function toggleDetail() {
+    var close = map.getZoom() >= DETAIL_ZOOM;
+    if (close && map.hasLayer(detailLayers)) map.removeLayer(detailLayers);
+    if (!close && !map.hasLayer(detailLayers)) detailLayers.addTo(map);
+  }
+  var TOWNS = [["Healy", 63.86, -148.97], ["Talkeetna", 62.32, -150.11], ["Wasilla", 61.58, -149.44],
+    ["Palmer", 61.60, -149.11], ["Anchorage", 61.22, -149.90], ["Whittier", 60.77, -148.68], ["Valdez", 61.13, -146.35],
+    ["Glennallen", 62.10, -145.60], ["Seward", 60.10, -149.44], ["Soldotna", 60.49, -151.06], ["Homer", 59.64, -151.55]];
+  var PEAKS = [["Denali", 63.07, -151.00], ["Foraker", 62.96, -151.40], ["Spurr", 61.30, -152.25],
+    ["Redoubt", 60.49, -152.74], ["Iliamna", 60.03, -153.09], ["Marcus Baker", 61.44, -147.75]];
+
+  // ---- Controls: full screen, sun line, points ----------------------------------
+  function setupControls() {
+    ["btn-full", "btn-sun", "btn-pts", "sunbox"].forEach(function (id) {
+      L.DomEvent.disableClickPropagation($(id));
+      L.DomEvent.disableScrollPropagation($(id));
+    });
+    $("btn-full").addEventListener("click", toggleFull);
+    $("btn-sun").addEventListener("click", function () {
+      showSun = !showSun; this.setAttribute("aria-pressed", String(showSun)); drawSun();
+    });
+    $("btn-pts").addEventListener("click", function () {
+      showPoints = !showPoints; this.setAttribute("aria-pressed", String(showPoints)); drawPoints();
+    });
+    document.addEventListener("fullscreenchange", function () { if (!document.fullscreenElement) setFull(false); });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && document.body.classList.contains("full") && !document.fullscreenElement) setFull(false);
+    });
+    var saved = null;
+    try { saved = JSON.parse(store.get(PIN_KEY) || "null"); } catch (e) { /* ignore */ }
+    var ok = saved && saved.length === 2 && isFinite(saved[0]) && isFinite(saved[1]);
+    pin = L.marker(ok ? saved : HOME, {
+      draggable: true, pane: "pin", autoPan: true, title: "Drag to move the sun line", alt: "Sun pin",
+      icon: L.divIcon({ className: "", html: el("div", "pin"), iconSize: [26, 26], iconAnchor: [13, 13] }),
+    });
+    pin.on("drag", drawSun).on("dragend", function () {
+      var p = pin.getLatLng(); store.set(PIN_KEY, JSON.stringify([p.lat, p.lng])); drawSun();
+    });
+  }
+
+  function setFull(on) {
+    document.body.classList.toggle("full", on);
+    var b = $("btn-full");
+    b.setAttribute("aria-pressed", String(on));
+    b.querySelector("span").textContent = on ? "Exit full screen" : "Full screen";
+    b.title = on ? "Exit full screen" : "Full screen";
+    if (map) setTimeout(function () { map.invalidateSize({ animate: false }); }, 60);
+  }
+  function inFrame() { try { return window.self !== window.top; } catch (e) { return true; } }
+  function toggleFull() {
+    var on = !document.body.classList.contains("full");
+    if (!on) {
+      if (document.fullscreenElement) document.exitFullscreen().catch(function () {});
+      setFull(false);
+      return;
+    }
+    var root = document.documentElement;
+    var fallback = function () {
+      // Inside the website's frame without full-screen permission: open the map in its own tab instead.
+      if (inFrame()) { var a = el("a"); a.href = location.href; a.target = "_blank"; a.rel = "noopener"; a.click(); }
+      else setFull(true);
+    };
+    if (root.requestFullscreen) root.requestFullscreen().then(function () { setFull(true); }, fallback);
+    else fallback();
   }
 
   // ---- Tabs ------------------------------------------------------------------
@@ -192,14 +316,14 @@
     delete mapEl.dataset.dots;
     mapEl.dataset.tab = id;
     map.closePopup();
-    clearDots();
+    clearField();
     hideNote();
 
-    if (!tab.file) { showNote(tab.error || "This map could not be drawn."); return; }
+    if (!tab.file) { showNote(tab.error || "This map could not be drawn."); drawSun(); return; }
     var token = ++loadToken;
     loadTab(tab).then(function (file) {
       if (token !== loadToken) return;
-      drawDots(tab, file);
+      drawTab(tab, file);
     }, function () {
       if (token !== loadToken) return;
       showNote("This map could not be loaded. Please try again later.");
@@ -223,48 +347,171 @@
   }
   function hideNote() { $("map-note").hidden = true; }
 
-  // ---- Dots ------------------------------------------------------------------
-  function clearDots() { dotLayer.clearLayers(); markers = []; }
-
-  function drawDots(tab, file) {
-    var spacing = spacingPx(), gap = ringGap(spacing);
-    var dots = file.dots.map(function (d, i) { return [d, i]; });
-    // Better dots on top: ascending q, file order among ties.
-    dots.sort(function (a, b) { return a[0][4] - b[0][4] || a[1] - b[1]; });
-    dots.forEach(function (pair) {
-      var d = pair[0];
-      var r = radiusFor(d[4], spacing);
-      var faint = !!FAINT_KINDS[d[2]];
-      var fill = L.circleMarker([d[0], d[1]], {
-        renderer: renderer, radius: r, stroke: false,
-        fillColor: d[3], fillOpacity: faint ? opacity * FAINT_FILL : opacity, bubblingMouseEvents: false,
-      });
-      fill.bindPopup(function () { return dotPopup(tab, file, d, null); }, { maxWidth: 260 });
-      dotLayer.addLayer(fill);
-      var ring = null;
-      if (d[6]) {
-        ring = L.circleMarker([d[0], d[1]], {
-          renderer: renderer, radius: r + gap, fill: false, color: d[3], weight: 1.25,
-          opacity: opacity, dashArray: "3 3", interactive: false,
-        });
-        dotLayer.addLayer(ring);
-      }
-      markers.push({ dot: d, fill: fill, ring: ring });
-    });
-    current.data = file;
-    showLegend(file.map_type);
-    var mapEl = $("map");
-    mapEl.dataset.opacity = String(opacity);
-    mapEl.dataset.dots = String(markers.length);
+  function clearField() {
+    if (fieldLayer) { map.removeLayer(fieldLayer); fieldLayer = null; }
+    $("hours").hidden = true;
+    pointsLayer.clearLayers();
   }
 
-  function resizeDots() {
-    var spacing = spacingPx(), gap = ringGap(spacing);
-    markers.forEach(function (m) {
-      var r = radiusFor(m.dot[4], spacing);
-      m.fill.setRadius(r);
-      if (m.ring) m.ring.setRadius(r + gap);
+  function drawTab(tab, file) {
+    current.data = file;
+    if (file.map_type === "denali") { drawDenaliTab(tab, file); return; }
+    $("hours").hidden = true;
+    if (!file.grid) file.grid = buildGrid(file.dots);
+    if (!file.image) file.image = renderField(file);
+    if (file.image) {
+      fieldLayer = L.imageOverlay(file.image, [[EXTENT.south, EXTENT.west], [EXTENT.north, EXTENT.east]],
+        { pane: "field", className: "field", interactive: false, opacity: opacity }).addTo(map);
+    }
+    drawPoints();
+    showKey(file.map_type);
+    drawSun();
+    var mapEl = $("map");
+    mapEl.dataset.opacity = String(opacity);
+    mapEl.dataset.dots = String(file.dots.length);
+  }
+
+  // ---- The colour layer --------------------------------------------------------
+  // The forecast points sit on a hex lattice: rows of equal latitude, odd rows shifted east.
+  // Recover rows and columns from the points themselves so any spacing works.
+  function median(xs) { xs = xs.slice().sort(function (a, b) { return a - b; }); return xs.length ? xs[xs.length >> 1] : 0; }
+  function buildGrid(dots) {
+    if (!dots.length) return null;
+    var byLat = {};
+    dots.forEach(function (d, i) { (byLat[d[0].toFixed(4)] = byLat[d[0].toFixed(4)] || []).push(i); });
+    var lats = Object.keys(byLat).map(Number).sort(function (a, b) { return a - b; });
+    var gaps = [], lonGaps = [];
+    for (var i = 1; i < lats.length; i++) gaps.push(lats[i] - lats[i - 1]);
+    var dlat = gaps.length ? Math.min.apply(null, gaps) : 0.05;
+    var lat0 = lats[0], rows = Math.round((lats[lats.length - 1] - lat0) / dlat) + 1;
+    lats.forEach(function (la) {
+      var lons = byLat[la.toFixed(4)].map(function (j) { return dots[j][1]; }).sort(function (a, b) { return a - b; });
+      for (var k = 1; k < lons.length; k++) lonGaps.push(lons[k] - lons[k - 1]);
     });
+    var dlon = lonGaps.length ? Math.min.apply(null, lonGaps.filter(function (g) { return g > 1e-6; })) : 0.1;
+    var start = [Infinity, Infinity];   // western-most lon of even / odd rows
+    dots.forEach(function (d) {
+      var r = Math.round((d[0] - lat0) / dlat);
+      start[r % 2] = Math.min(start[r % 2], d[1]);
+    });
+    if (!isFinite(start[1])) start[1] = start[0];
+    // Snap the odd-row start onto the even-row lattice (half a step east is the usual shift).
+    var cols = 0, cells;
+    var colOf = function (r, lon) { return Math.round((lon - start[r % 2]) / dlon); };
+    dots.forEach(function (d) { cols = Math.max(cols, colOf(Math.round((d[0] - lat0) / dlat), d[1]) + 1); });
+    cells = new Int32Array(rows * cols).fill(-1);
+    dots.forEach(function (d, j) {
+      var r = Math.round((d[0] - lat0) / dlat), c = colOf(r, d[1]);
+      if (r >= 0 && r < rows && c >= 0 && c < cols) cells[r * cols + c] = j;
+    });
+    return { lat0: lat0, dlat: dlat, dlon: dlon, start: start, rows: rows, cols: cols, cells: cells, median: median(gaps) };
+  }
+
+  function rgbaOf(d) {
+    var s = STYLE[d[2]];
+    if (!s) {   // a kind this page has no colour for: use its legend colour, half see-through
+      var hex = /^#([0-9a-f]{6})$/i.exec(d[3] || "");
+      var n = hex ? parseInt(hex[1], 16) : 0x888888;
+      s = [n >> 16, (n >> 8) & 255, n & 255, 0.45, 0];
+    }
+    var a = Math.min(0.95, s[3] + s[4] * (d[4] || 0));
+    return [s[0] * a, s[1] * a, s[2] * a, a];   // premultiplied
+  }
+
+  // Blend between neighbouring points (premultiplied, so colour never bleeds out of see-through areas),
+  // drawn in Web Mercator so it lines up with the map. Rendered small; the browser smooths it when scaled up.
+  function renderField(file) {
+    var g = file.grid;
+    if (!g) return null;
+    var cells = new Float32Array(g.rows * g.cols * 4);
+    for (var i = 0; i < g.cells.length; i++) if (g.cells[i] >= 0) cells.set(rgbaOf(file.dots[g.cells[i]]), i * 4);
+    var merc = function (la) { return Math.log(Math.tan(Math.PI / 4 + la * RAD / 2)); };
+    var y0 = merc(EXTENT.north), y1 = merc(EXTENT.south);
+    var lonSpan = EXTENT.east - EXTENT.west;
+    var W = Math.max(120, Math.min(900, Math.round(3 * lonSpan / g.dlon)));
+    var H = Math.round(W * (y0 - y1) / (lonSpan * RAD));
+    var cv = document.createElement("canvas");
+    cv.width = W; cv.height = H;
+    var ctx = cv.getContext("2d"), img = ctx.createImageData(W, H), px = img.data;
+    var a = [0, 0, 0, 0], b = [0, 0, 0, 0];
+    function rowSample(r, lon, out) {
+      out[0] = out[1] = out[2] = out[3] = 0;
+      if (r < 0 || r >= g.rows) return;
+      var cc = (lon - g.start[r % 2]) / g.dlon, c0 = Math.floor(cc), f = cc - c0;
+      for (var k = 0; k < 2; k++) {
+        var c = c0 + k, w = k ? f : 1 - f;
+        if (c < 0 || c >= g.cols || w === 0) continue;
+        var o = (r * g.cols + c) * 4;
+        out[0] += cells[o] * w; out[1] += cells[o + 1] * w; out[2] += cells[o + 2] * w; out[3] += cells[o + 3] * w;
+      }
+    }
+    for (var y = 0; y < H; y++) {
+      var lat = (2 * Math.atan(Math.exp(y0 + (y1 - y0) * (y + 0.5) / H)) - Math.PI / 2) / RAD;
+      var rr = (lat - g.lat0) / g.dlat, r0 = Math.floor(rr), fr = rr - r0;
+      if (rr < -0.5 || rr > g.rows - 0.5) continue;
+      for (var x = 0; x < W; x++) {
+        var lon = EXTENT.west + lonSpan * (x + 0.5) / W;
+        rowSample(r0, lon, a); rowSample(r0 + 1, lon, b);
+        if (r0 < 0) { a = b.slice(); } else if (r0 + 1 >= g.rows) { b = a.slice(); }
+        var al = a[3] * (1 - fr) + b[3] * fr, o = (y * W + x) * 4;
+        if (al > 0.003) {
+          px[o] = (a[0] * (1 - fr) + b[0] * fr) / al;
+          px[o + 1] = (a[1] * (1 - fr) + b[1] * fr) / al;
+          px[o + 2] = (a[2] * (1 - fr) + b[2] * fr) / al;
+          px[o + 3] = al * 255;
+        }
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    if ("filter" in ctx) {   // soften the row steps a little more where canvas filters exist
+      var out = document.createElement("canvas");
+      out.width = W; out.height = H;
+      var octx = out.getContext("2d");
+      octx.filter = "blur(1px)";
+      octx.drawImage(cv, 0, 0);
+      cv = out;
+    }
+    return cv.toDataURL("image/png");
+  }
+
+  function drawPoints() {
+    pointsLayer.clearLayers();
+    var file = current && current.data;
+    if (!showPoints || !file || !current.file || !file.dots) return;
+    var ren = L.canvas({ pane: "points" });
+    file.dots.forEach(function (d) {
+      var s = STYLE[d[2]];
+      L.circleMarker([d[0], d[1]], { renderer: ren, radius: 1.5 + 2 * (d[4] || 0), stroke: false, fillOpacity: 0.95,
+        fillColor: s ? "rgb(" + s.slice(0, 3).join(",") + ")" : d[3], interactive: false }).addTo(pointsLayer);
+    });
+  }
+
+  // ---- Tap anywhere: the forecast at the nearest point ------------------------
+  function nearestDot(file, lat, lon) {
+    var g = file.grid;
+    if (g) {
+      var r = Math.round((lat - g.lat0) / g.dlat);
+      if (r >= 0 && r < g.rows) {
+        var c = Math.round((lon - g.start[r % 2]) / g.dlon);
+        if (c >= 0 && c < g.cols && g.cells[r * g.cols + c] >= 0) return file.dots[g.cells[r * g.cols + c]];
+      }
+    }
+    var k = Math.cos(lat * RAD), best = null, bestD = Infinity;
+    file.dots.forEach(function (d) {
+      var dy = d[0] - lat, dx = (d[1] - lon) * k, dist = dx * dx + dy * dy;
+      if (dist < bestD) { bestD = dist; best = d; }
+    });
+    var limit = g ? 2 * Math.max(g.dlat, g.dlon * k) : 0.2;
+    return bestD <= limit * limit ? best : null;
+  }
+
+  function onTap(e) {
+    var tab = current, file = tab && tab.data;
+    if (file && tab.file && file.map_type === "denali") { denaliPopup(file, e.latlng); return; }
+    if (!file || !tab.file || !file.dots || !file.dots.length) return;
+    var d = nearestDot(file, e.latlng.lat, e.latlng.lng);
+    if (!d) return;
+    L.popup({ maxWidth: 260 }).setLatLng(e.latlng).setContent(dotPopup(tab, file, d, null)).openOn(map);
   }
 
   function kindLabel(mapType, kind) {
@@ -273,20 +520,25 @@
     return kind;
   }
 
+  function swatchColour(d) {
+    var s = STYLE[d[2]];
+    return s ? "rgb(" + s.slice(0, 3).join(",") + ")" : d[3];
+  }
+
   function dotPopup(tab, file, d, heading) {
     var box = el("div", "pop");
     if (heading) box.appendChild(el("p", "pop-name", heading));
+    var m = d[7] || {};
+    if (typeof m.chance === "number") box.appendChild(el("p", "pop-chance", tab.label + ": " + m.chance + "% chance"));
     var head = el("p", "pop-head");
     var swatch = el("span", "pop-swatch");
-    swatch.style.background = d[3];
+    swatch.style.background = swatchColour(d);
     head.appendChild(swatch);
     var words = [kindLabel(file.map_type, d[2])];
     if (d[5]) words.push(capital(d[5]));
     if (d[6]) words.push("models disagree");
     head.appendChild(document.createTextNode(words.join(" · ")));
     box.appendChild(head);
-    var m = d[7] || {};
-    if (typeof m.chance === "number") box.appendChild(el("p", "pop-chance", tab.label + ": " + m.chance + "% chance"));
     box.appendChild(el("p", "pop-when", tab.label + " " + weekdayTime(file.when || tab.when)));
     var metrics = "block" in m
       ? "Light blocked " + m.block + "% · Cloud canvas " + m.canvas + "%"
@@ -311,48 +563,335 @@
 
   function spotPopup(s) {
     var tab = current, file = tab && tab.data;
-    if (!file || !tab.file || !file.dots.length) {
+    var d = file && tab.file && file.dots && file.dots.length ? nearestDot(file, s.lat, s.lon) : null;
+    if (!d) {
       var box = el("div", "pop");
       box.appendChild(el("p", "pop-name", s.name));
       return box;
     }
-    var k = Math.cos(s.lat * Math.PI / 180), best = null, bestD = Infinity;
-    file.dots.forEach(function (d) {
-      var dy = d[0] - s.lat, dx = (d[1] - s.lon) * k, dist = dx * dx + dy * dy;
-      if (dist < bestD) { bestD = dist; best = d; }
-    });
-    return dotPopup(tab, file, best, s.name);
+    return dotPopup(tab, file, d, s.name);
   }
 
-  // ---- Legend ----------------------------------------------------------------
-  function setupLegend() {
-    var toggle = $("legend-toggle");
-    var wide = window.matchMedia && window.matchMedia("(min-width: 700px)").matches;
-    setLegendOpen(!!wide);
-    toggle.addEventListener("click", function () {
-      setLegendOpen(toggle.getAttribute("aria-expanded") !== "true");
+  // ---- Colour key ---------------------------------------------------------------
+  function showKey(mapType) {
+    var key = KEYS[mapType];
+    var bar = $("key-bar"), ticks = $("key-ticks");
+    ticks.textContent = "";
+    if (!key) {   // unknown map type: fall back to the legend's own colours
+      key = ((index.legend && index.legend[mapType]) || []).map(function (row) { return [row[0], row[2], row[1]]; });
+    }
+    var stops = key.map(function (k, i) {
+      var s = STYLE[k[0]];
+      var colour = s ? "rgba(" + s.slice(0, 3).join(",") + "," + Math.min(1, s[3] + s[4] + 0.2) + ")" : (k[2] || "#888");
+      return colour + " " + Math.round(100 * i / Math.max(1, key.length - 1)) + "%";
     });
-    L.DomEvent.disableClickPropagation($("legend"));
-    L.DomEvent.disableScrollPropagation($("legend"));
+    bar.style.background = stops.length > 1 ? "linear-gradient(90deg," + stops.join(",") + ")" : (stops[0] || "none");
+    key.forEach(function (k) { ticks.appendChild(el("span", null, k[1])); });
+    $("legend").hidden = !key.length;
   }
 
-  function setLegendOpen(open) {
-    $("legend-toggle").setAttribute("aria-expanded", String(open));
-    $("legend-body").hidden = !open;
+  // ---- Denali View ---------------------------------------------------------------
+  // denali.json: hourly low/mid/high cloud on 0.25° nodes. assets/denali_los.json: metres of the mountain that
+  // clear the terrain and the Earth's curve from each place. The % is worked out here for any spot.
+  var DENALI_MIN_M = 300;     // less than this showing over the hills counts as hidden
+  var denaliHour = 0, losGrid = null, losLoading = null;
+
+  function loadLos() {
+    if (!losLoading) {
+      losLoading = fetch("assets/denali_los.json").then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+        .then(function (g) { losGrid = g; return g; }, function () { losLoading = null; return null; });
+    }
+    return losLoading;
+  }
+  function losAt(lat, lon) {   // metres of Denali showing, or null when unknown (outside the grid / not loaded)
+    var g = losGrid;
+    if (!g) return null;
+    var r = Math.round((lat - g.lat0) / g.dlat), c = Math.round((lon - g.lon0) / g.dlon);
+    if (r < 0 || r >= g.rows || c < 0 || c >= g.cols) return null;
+    return g.visible[r * g.cols + c] * g.unit_m;
+  }
+  function coverAt(file, layer, hi, lat, lon) {   // bilinear over the cloud nodes; -1 = no data
+    var n = file.nodes, vals = file[layer][hi];
+    var rr = (lat - n.lat0) / n.step, cc = (lon - n.lon0) / n.step;
+    var r0 = Math.floor(rr), c0 = Math.floor(cc), fy = rr - r0, fx = cc - c0, sum = 0, wsum = 0;
+    for (var dy = 0; dy < 2; dy++) for (var dx = 0; dx < 2; dx++) {
+      var r = r0 + dy, c = c0 + dx;
+      if (r < 0 || r >= n.rows || c < 0 || c >= n.cols) continue;
+      var v = vals[r * n.cols + c];
+      if (v < 0) continue;
+      var w = (dy ? fy : 1 - fy) * (dx ? fx : 1 - fx);
+      sum += v * w; wsum += w;
+    }
+    return wsum > 0 ? sum / wsum : -1;
+  }
+  function p80(xs) {
+    xs = xs.filter(function (x) { return x >= 0; }).sort(function (a, b) { return a - b; });
+    return xs.length ? xs[Math.min(xs.length - 1, Math.floor(0.8 * xs.length))] : 0;
+  }
+  function distKm(lat1, lon1, lat2, lon2) {
+    var p1 = lat1 * RAD, p2 = lat2 * RAD, dl = (lon2 - lon1) * RAD;
+    var a = Math.pow(Math.sin((p2 - p1) / 2), 2) + Math.cos(p1) * Math.cos(p2) * Math.pow(Math.sin(dl / 2), 2);
+    return 2 * R_KM * Math.asin(Math.sqrt(a));
+  }
+  function bearing(lat1, lon1, lat2, lon2) {
+    var p1 = lat1 * RAD, p2 = lat2 * RAD, dl = (lon2 - lon1) * RAD;
+    var y = Math.sin(dl) * Math.cos(p2), x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
+    return (Math.atan2(y, x) / RAD + 360) % 360;
+  }
+  // Follow the sightline to the summit: while it is under LOW_TOP_M, low cloud on the way blocks it; above
+  // that, mid cloud does. Mid cloud over the mountain (a cloud cap) hides the summit; high cloud only dims it.
+  // Each layer counts at its 80th percentile along the way.
+  var LOW_TOP_M = 2000, EYE_M = 50, REFRACTION_K = 0.13;
+  function curveDrop(km) { return Math.pow(km * 1000, 2) * (1 - REFRACTION_K) / (2 * R_KM * 1000); }
+  function denaliView(file, hi, lat, lon) {
+    var t = file.target, shows = losAt(lat, lon);
+    var dist = distKm(lat, lon, t.lat, t.lon), n = Math.max(6, Math.ceil(dist / 12));
+    var rise = t.elev_m - EYE_M - curveDrop(dist);
+    var lows = [], mids = [], segs = [];
+    for (var i = 0; i < n; i++) {
+      var f = (i + 0.5) / n, la = lat + (t.lat - lat) * f, lo = lon + (t.lon - lon) * f;
+      var height = EYE_M + rise * f + curveDrop(f * dist);   // sightline above sea level here
+      var layer = height < LOW_TOP_M ? "low" : "mid", cover = coverAt(file, layer, hi, la, lo);
+      if (cover >= 0) (layer === "low" ? lows : mids).push(cover);
+      segs.push(Math.max(0, cover));
+    }
+    var cap = Math.max(0, coverAt(file, "mid", hi, t.lat, t.lon));
+    mids.push(cap);
+    var high = Math.max(0, coverAt(file, "high", hi, t.lat, t.lon));
+    var L1 = p80(lows), M = p80(mids);
+    var chance = 5 * Math.round(20 * (1 - L1 / 100) * (1 - M / 100) * (1 - 0.3 * high / 100));
+    return { chance: chance, hidden: shows !== null && shows < DENALI_MIN_M, shows: shows, dist: dist,
+             az: bearing(lat, lon, t.lat, t.lon), segs: segs, cap: cap, low: L1, mid: M, high: high };
+  }
+  function denaliRGBA(v) {   // premultiplied colour for one place
+    var pick = function (k) { var s = STYLE[k]; return [s[0], s[1], s[2], s[3]]; };
+    var a = pick("d0"), m = pick("d50"), b = pick("d100"), x = v.chance / 100, lo = x < 0.5 ? a : m, hi = x < 0.5 ? m : b;
+    var f = x < 0.5 ? x / 0.5 : (x - 0.5) / 0.5;
+    var c = [0, 1, 2, 3].map(function (k) { return lo[k] + (hi[k] - lo[k]) * f; });
+    // fade to "hills in the way" as less of the mountain clears the terrain
+    var open = v.shows == null ? 1 : Math.max(0, Math.min(1, (v.shows - 100) / 700)), h = pick("hidden");
+    c = [0, 1, 2, 3].map(function (k) { return h[k] + (c[k] - h[k]) * open; });
+    return [c[0] * c[3], c[1] * c[3], c[2] * c[3], c[3]];
+  }
+  function hourLabel(iso) { var p = parts(iso); return { day: p.weekday, time: p.hour + (p.minute === "00" ? "" : ":" + p.minute) + " " + p.dayPeriod }; }
+
+  function drawDenaliTab(tab, file) {
+    loadLos().then(function () {
+      if (current !== tab) return;
+      if (denaliHour >= file.hours.length) denaliHour = 0;
+      drawHours(file);
+      drawDenaliField(file);
+      showKey("denali");
+      drawSun();
+      var mapEl = $("map");
+      mapEl.dataset.opacity = String(opacity);
+      mapEl.dataset.dots = String(file.hours.length);
+    });
+  }
+  function drawHours(file) {
+    var box = $("hours");
+    box.textContent = "";
+    var lastDay = null;
+    file.hours.forEach(function (iso, i) {
+      var h = hourLabel(iso), b = el("button", "hour");
+      b.type = "button";
+      b.setAttribute("aria-pressed", String(i === denaliHour));
+      if (h.day !== lastDay) { b.appendChild(el("b", null, h.day)); lastDay = h.day; }
+      b.appendChild(document.createTextNode(h.time));
+      b.addEventListener("click", function () {
+        denaliHour = i;
+        Array.prototype.forEach.call(box.children, function (x, j) { x.setAttribute("aria-pressed", String(j === i)); });
+        drawDenaliField(file);
+        drawSun();
+        map.closePopup();
+      });
+      box.appendChild(b);
+    });
+    box.hidden = false;
+  }
+  function drawDenaliField(file) {
+    if (fieldLayer) { map.removeLayer(fieldLayer); fieldLayer = null; }
+    file.images = file.images || {};
+    if (!file.images[denaliHour] && losGrid) {
+      var g = losGrid, cells = new Float32Array(g.rows * g.cols * 4);
+      for (var r = 0; r < g.rows; r++) for (var c = 0; c < g.cols; c++) {
+        cells.set(denaliRGBA(denaliView(file, denaliHour, g.lat0 + r * g.dlat, g.lon0 + c * g.dlon)), (r * g.cols + c) * 4);
+      }
+      file.images[denaliHour] = renderRegular(g, cells);
+    }
+    if (file.images[denaliHour]) {
+      fieldLayer = L.imageOverlay(file.images[denaliHour], [[EXTENT.south, EXTENT.west], [EXTENT.north, EXTENT.east]],
+        { pane: "field", className: "field", interactive: false, opacity: opacity }).addTo(map);
+    }
+  }
+  // Regular lat/lon grid (rows south to north) to a Web Mercator image, blended between cells.
+  function renderRegular(g, cells) {
+    var merc = function (la) { return Math.log(Math.tan(Math.PI / 4 + la * RAD / 2)); };
+    var y0 = merc(EXTENT.north), y1 = merc(EXTENT.south), lonSpan = EXTENT.east - EXTENT.west;
+    var W = Math.min(900, g.cols * 4), H = Math.round(W * (y0 - y1) / (lonSpan * RAD));
+    var cv = document.createElement("canvas");
+    cv.width = W; cv.height = H;
+    var ctx = cv.getContext("2d"), img = ctx.createImageData(W, H), px = img.data;
+    for (var y = 0; y < H; y++) {
+      var lat = (2 * Math.atan(Math.exp(y0 + (y1 - y0) * (y + 0.5) / H)) - Math.PI / 2) / RAD;
+      var rr = Math.max(0, Math.min(g.rows - 1.0001, (lat - g.lat0) / g.dlat)), r0 = Math.floor(rr), fy = rr - r0;
+      for (var x = 0; x < W; x++) {
+        var lon = EXTENT.west + lonSpan * (x + 0.5) / W;
+        var cc = Math.max(0, Math.min(g.cols - 1.0001, (lon - g.lon0) / g.dlon)), c0 = Math.floor(cc), fx = cc - c0;
+        var o = (y * W + x) * 4, acc = [0, 0, 0, 0];
+        for (var k = 0; k < 4; k++) {
+          var r = r0 + (k >> 1), c = c0 + (k & 1), w = ((k >> 1) ? fy : 1 - fy) * ((k & 1) ? fx : 1 - fx), q = (r * g.cols + c) * 4;
+          acc[0] += cells[q] * w; acc[1] += cells[q + 1] * w; acc[2] += cells[q + 2] * w; acc[3] += cells[q + 3] * w;
+        }
+        if (acc[3] > 0.003) {
+          px[o] = acc[0] / acc[3]; px[o + 1] = acc[1] / acc[3]; px[o + 2] = acc[2] / acc[3]; px[o + 3] = acc[3] * 255;
+        }
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    if ("filter" in ctx) {
+      var out = document.createElement("canvas");
+      out.width = W; out.height = H;
+      var octx = out.getContext("2d");
+      octx.filter = "blur(2px)";
+      octx.drawImage(cv, 0, 0);
+      cv = out;
+    }
+    return cv.toDataURL("image/png");
+  }
+  function denaliWords(v) {
+    if (v.hidden) return "Hills hide Denali from here";
+    return "Denali: " + v.chance + "% chance";
+  }
+  function denaliPopup(file, ll) {
+    var v = denaliView(file, denaliHour, ll.lat, ll.lng), box = el("div", "pop");
+    box.appendChild(el("p", "pop-chance", denaliWords(v)));
+    var h = hourLabel(file.hours[denaliHour]);
+    box.appendChild(el("p", "pop-when", h.day + " " + h.time + " · " + Math.round(v.dist) + " km away"));
+    if (!v.hidden) {
+      box.appendChild(el("p", "pop-metrics", "Low cloud on the way " + Math.round(v.low) + "% · mid cloud " +
+        Math.round(v.mid) + "% · cloud on the mountain " + Math.round(v.cap) + "%"));
+    }
+    L.popup({ maxWidth: 260 }).setLatLng(ll).setContent(box).openOn(map);
+  }
+  function drawDenaliLine(file) {
+    var box = $("sunbox"), t = file.target;
+    L.marker([t.lat, t.lon], { pane: "sun", interactive: false, keyboard: false,
+      icon: L.divIcon({ className: "denali-mark", html: el("span", null, "▲ Denali"), iconSize: null, iconAnchor: [6, 8] }) }).addTo(sunLayer);
+    if (!showSun) {
+      if (pin && map.hasLayer(pin)) map.removeLayer(pin);
+      box.hidden = true;
+      return;
+    }
+    if (!map.hasLayer(pin)) pin.addTo(map);
+    box.hidden = false;
+    var p = pin.getLatLng(), v = denaliView(file, denaliHour, p.lat, p.lng), n = v.segs.length;
+    for (var i = 0; i < n; i++) {
+      var a = [p.lat + (t.lat - p.lat) * i / n, p.lng + (t.lon - p.lng) * i / n];
+      var b = [p.lat + (t.lat - p.lat) * (i + 1) / n, p.lng + (t.lon - p.lng) * (i + 1) / n];
+      var clear = 1 - v.segs[i] / 100;   // green where the way is clear, white where cloud sits on it
+      var col = "rgb(" + Math.round(236 - 174 * clear) + "," + Math.round(239 - 15 * clear) + "," + Math.round(244 - 79 * clear) + ")";
+      L.polyline([a, b], { pane: "sun", color: v.hidden ? "#7d8796" : col, weight: 4, opacity: 0.95, lineCap: "butt", interactive: false }).addTo(sunLayer);
+    }
+    var clearCap = 1 - v.cap / 100;
+    L.circleMarker([t.lat, t.lon], { pane: "sun", radius: 7, weight: 2, color: "#0d1420", fillOpacity: 1, interactive: false,
+      fillColor: v.hidden ? "#7d8796" : "rgb(" + Math.round(236 - 174 * clearCap) + "," + Math.round(239 - 15 * clearCap) + "," + Math.round(244 - 79 * clearCap) + ")" }).addTo(sunLayer);
+    var h = hourLabel(file.hours[denaliHour]);
+    box.appendChild(el("p", "sun-head", denaliWords(v) + " · " + h.day + " " + h.time));
+    if (!v.hidden) box.appendChild(el("p", "sun-help", "Cloud on the way " + Math.round(Math.max(v.low, v.mid)) + "% · on the mountain " + Math.round(v.cap) + "%"));
+    var shows = v.shows == null ? "" : v.hidden ? " · hills block the view" : " · top " + (Math.round(v.shows / 100) * 100).toLocaleString("en-US") + " m clears the hills";
+    box.appendChild(el("p", "sun-help", Math.round(v.dist) + " km · " + Math.round(v.az) + "° " + compass(v.az) + shows));
+    if (!v.hidden) {
+      var best = 0, bestI = 0;
+      file.hours.forEach(function (iso, i) { var c = denaliView(file, i, p.lat, p.lng).chance; if (c > best) { best = c; bestI = i; } });
+      var bh = hourLabel(file.hours[bestI]);
+      box.appendChild(el("p", "sun-key", "Best in the next 2 days: " + bh.day + " " + bh.time + " (" + best + "%)"));
+    }
+    box.appendChild(el("p", "sun-help", "Drag the pin to any spot. The line is green where the way is clear, white where cloud sits on it."));
+    $("map").dataset.denali = v.hidden ? "hidden" : String(v.chance);
   }
 
-  function showLegend(mapType) {
-    var list = $("legend-list");
-    list.textContent = "";
-    ((index.legend && index.legend[mapType]) || []).forEach(function (row) {
-      var li = el("li");
-      var sw = el("span", "legend-swatch");
-      if (FAINT_KINDS[row[0]]) { sw.className += " legend-swatch-faint"; sw.style.borderColor = row[1]; sw.style.background = row[1] + "4d"; }
-      else sw.style.background = row[1];
-      li.appendChild(sw);
-      li.appendChild(document.createTextNode(row[2]));
-      list.appendChild(li);
+  // ---- Sun line ----------------------------------------------------------------
+  // Solar position (NOAA-style low-precision formulae, ~0.1°).
+  function sunPos(ms, lat, lon) {
+    var n = (ms - 946728000000) / 86400000;
+    var L0 = (280.460 + 0.9856474 * n) % 360, g = ((357.528 + 0.9856003 * n) % 360) * RAD;
+    var lam = (L0 + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * RAD, eps = (23.439 - 0.0000004 * n) * RAD;
+    var ra = Math.atan2(Math.cos(eps) * Math.sin(lam), Math.cos(lam)), dec = Math.asin(Math.sin(eps) * Math.sin(lam));
+    var gmst = (18.697374558 + 24.06570982441908 * n) % 24;
+    var H = (gmst * 15 + lon) * RAD - ra, la = lat * RAD;
+    var alt = Math.asin(Math.sin(la) * Math.sin(dec) + Math.cos(la) * Math.cos(dec) * Math.cos(H));
+    var az = Math.atan2(Math.sin(H), Math.cos(H) * Math.sin(la) - Math.tan(dec) * Math.cos(la)) / RAD + 180;
+    return { alt: alt / RAD, az: (az + 360) % 360 };
+  }
+  // The sunrise or sunset nearest the tab's time, for wherever the pin is.
+  function sunEvent(lat, lon, iso, rising) {
+    var t0 = Date.parse(iso), best = null;
+    var h = function (m) { return sunPos(t0 + m * 60000, lat, lon).alt + 0.833; };
+    var prev = h(-240);
+    for (var m = -240; m < 240; m++) {
+      var next = h(m + 1);
+      if ((rising ? prev < 0 && next >= 0 : prev > 0 && next <= 0) && (best === null || Math.abs(m) < Math.abs(best))) {
+        best = m + prev / (prev - next);
+      }
+      prev = next;
+    }
+    if (best === null) return null;
+    var ms = t0 + best * 60000;
+    return { time: new Date(ms), az: sunPos(ms, lat, lon).az };
+  }
+  function dest(lat, lon, az, km) {
+    var d = km / R_KM, la = lat * RAD, lo = lon * RAD, b = az * RAD;
+    var la2 = Math.asin(Math.sin(la) * Math.cos(d) + Math.cos(la) * Math.sin(d) * Math.cos(b));
+    var lo2 = lo + Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(la), Math.cos(d) - Math.sin(la) * Math.sin(la2));
+    return [la2 / RAD, lo2 / RAD];
+  }
+  // How far away a cloud base meets your horizon (from sea level), as in SkyFire's own scoring.
+  function horizonKm(cloudM) { return Math.sqrt(2 * R_KM * cloudM / 1000); }
+  function compass(az) {
+    return ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"][Math.round(az / 22.5) % 16];
+  }
+
+  var BANDS = [[400, 1200, "#ff9b5c", "Low cloud"], [2000, 4000, "#c58bff", "Mid cloud"]];
+
+  function drawSun() {
+    sunLayer.clearLayers();
+    var box = $("sunbox");
+    box.textContent = "";
+    var file = current && current.data, type = file ? file.map_type : null;
+    $("line-label").textContent = type === "denali" ? "Denali line" : "Sun line";
+    if (type === "denali" && current.file) { drawDenaliLine(file); return; }
+    var sky = type === "sky" && current.file;
+    if (!sky || !showSun) {
+      if (pin && map.hasLayer(pin)) map.removeLayer(pin);
+      var hint = current && current.file && NIGHT_HINT[type];
+      box.hidden = !hint;
+      if (hint) box.appendChild(el("p", "sun-help", hint));
+      return;
+    }
+    if (!map.hasLayer(pin)) pin.addTo(map);
+    box.hidden = false;
+    var p = pin.getLatLng(), rising = /sunrise/i.test(current.id + " " + current.label);
+    var ev = sunEvent(p.lat, p.lng, file.when || current.when, rising);
+    if (!ev) { box.appendChild(el("p", "sun-head", "No " + (rising ? "sunrise" : "sunset") + " here today")); return; }
+    var far = dest(p.lat, p.lng, ev.az, 260), back = dest(p.lat, p.lng, ev.az + 180, 60);
+    L.polyline([[p.lat, p.lng], far], { pane: "sun", color: "#ffd27a", weight: 2, opacity: 0.95, dashArray: "6 6", interactive: false }).addTo(sunLayer);
+    L.polyline([[p.lat, p.lng], back], { pane: "sun", color: "#ffd27a", weight: 1.5, opacity: 0.5, dashArray: "2 6", interactive: false }).addTo(sunLayer);
+    box.appendChild(el("p", "sun-head", (rising ? "Sunrise " : "Sunset ") + timeOnly(ev.time.toISOString()) + " · " + Math.round(ev.az) + "° " + compass(ev.az)));
+    box.appendChild(el("p", "sun-help", "Drag the sun pin. Cloud on the coloured bands blocks the light; gaps there let it through."));
+    BANDS.forEach(function (bd) {
+      var a = horizonKm(bd[0]), b = horizonKm(bd[1]);
+      L.polyline([dest(p.lat, p.lng, ev.az, a), dest(p.lat, p.lng, ev.az, b)],
+        { pane: "sun", color: bd[2], weight: 7, opacity: 0.9, lineCap: "butt", interactive: false }).addTo(sunLayer);
+      var range = Math.round(a) + "–" + Math.round(b) + " km";
+      L.marker(dest(p.lat, p.lng, ev.az, (a + b) / 2), { pane: "sun", interactive: false, keyboard: false,
+        icon: L.divIcon({ className: "hz", html: el("span", null, bd[3] + " " + range), iconSize: null, iconAnchor: [-8, 6] }) }).addTo(sunLayer);
+      var row = el("p", "sun-key"), sw = el("i");
+      sw.style.background = bd[2];
+      row.appendChild(sw);
+      row.appendChild(document.createTextNode(bd[3] + " on your horizon, " + range));
+      box.appendChild(row);
     });
-    $("legend").hidden = false;
+    $("map").dataset.sun = Math.round(ev.az) + "@" + ev.time.toISOString();
   }
 })();

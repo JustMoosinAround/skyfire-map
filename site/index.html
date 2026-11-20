@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="light dark">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="Live sunrise, sunset and aurora forecast map for Anchorage and South-central Alaska. See where the sky is likely to light up, updated three times a day.">
 <title>SkyFire</title>
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="style.css">
@@ -18,25 +19,33 @@
 
 <main id="app">
   <p id="unavailable" class="unavailable" hidden>The sky forecast is unavailable right now. Please check back later.</p>
-  <nav id="tabs" class="tabs" role="tablist" aria-label="Forecast maps"></nav>
-  <p id="when" class="when" aria-live="polite"></p>
+  <div class="bar-row">
+    <nav id="tabs" class="tabs" role="tablist" aria-label="Forecast maps"></nav>
+    <p id="when" class="when" aria-live="polite"></p>
+  </div>
+  <div id="hours" class="hours" role="group" aria-label="Hour" hidden></div>
   <p id="stale" class="stale" role="status" hidden></p>
   <div id="map-wrap" class="map-wrap" hidden>
-    <div id="map" class="map" aria-label="Forecast map"></div>
+    <div id="map" class="map" aria-label="Forecast map. Tap anywhere for the forecast there."></div>
+    <div id="sunbox" class="sunbox" hidden></div>
+    <div class="controls">
+      <button class="ctl" id="btn-full" type="button" aria-pressed="false" title="Full screen">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M1.5 5.5v-4h4M10.5 1.5h4v4M14.5 10.5v4h-4M5.5 14.5h-4v-4"/></svg><span>Full screen</span></button>
+      <button class="ctl" id="btn-sun" type="button" aria-pressed="true" title="Sun line">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.4 1.4M11.6 11.6L13 13M3 13l1.4-1.4M11.6 4.4L13 3"/></svg><span id="line-label">Sun line</span></button>
+      <button class="ctl" id="btn-pts" type="button" aria-pressed="false" title="Forecast points">
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="4" cy="4" r="1.6"/><circle cx="12" cy="4" r="1.6"/><circle cx="8" cy="8" r="1.6"/><circle cx="4" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/></svg><span>Points</span></button>
+    </div>
     <p id="map-note" class="map-note" hidden></p>
-    <section id="legend" class="legend" aria-label="Legend">
-      <button id="legend-toggle" class="legend-toggle" type="button" aria-expanded="false" aria-controls="legend-body">Legend</button>
-      <div id="legend-body" class="legend-body" hidden>
-        <ul id="legend-list" class="legend-list"></ul>
-        <p class="legend-note"><span class="key-size" aria-hidden="true"><i></i><i></i><i></i></span>Bigger dot = better</p>
-        <p class="legend-note"><span class="key-ring" aria-hidden="true"></span>Dashed ring = models disagree</p>
-      </div>
-    </section>
   </div>
+  <section id="legend" class="legend" aria-label="Colour key" hidden>
+    <div id="key-bar" class="key-bar"></div>
+    <div id="key-ticks" class="key-ticks"></div>
+  </section>
 </main>
 
 <footer id="footer" class="site-footer" hidden>
-  <p class="how">Each dot is a forecast for that spot: its colour says what kind of sky to expect and its size how good it should be. Tap a dot for details, and pick a tab for each sunrise, sunset or night ahead.</p>
+  <p class="how">Colours show what kind of sky to expect: white-grey is cloud in the way, yellow is clear but plain, and orange, pink and purple are where colour is likely. Tap the map for the % chance there, and drag the sun pin to see where the sun sets or rises from any spot.</p>
   <p class="small"><span class="site-credits"></span> · Refreshed 3× daily</p>
 </footer>
 

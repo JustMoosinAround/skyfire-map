@@ -280,6 +280,7 @@ main {
 }
 .site-footer p { margin: 0 0 4px; max-width: 60rem; }
 .site-footer .small { font-size: 0.75rem; }
+.get-app { color: var(--text); }
 
 /* ---- Full screen: the map fills the whole screen (or the whole frame) ------- */
 body.full { height: 100vh; height: 100dvh; overflow: hidden; }

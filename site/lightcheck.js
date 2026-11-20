@@ -24,6 +24,8 @@
   var MODEL_NAMES = { auto: "Auto", ecmwf_ifs025: "European", gfs_seamless: "US", icon_seamless: "German" };
   var WEIGHTS = { ecmwf_ifs025: 2, gfs_seamless: 1, icon_seamless: 1 };   // Auto blend, as in SkyFire's %
   var API = "https://api.open-meteo.com/v1/forecast";
+  var ELEV_API = "https://api.open-meteo.com/v1/elevation";   // 90 m Copernicus DEM, up to 100 points a call
+  var PROFILE_STEP_KM = 3, PROFILE_AZ_STEP = 2;
 
   // ---- sun -------------------------------------------------------------------------------------
   function sunPos(ms, lat, lon) {   // low-precision solar position (~0.1°); alt is geometric
@@ -176,12 +178,62 @@
     return w > 1e-9 ? sum / w : -1;
   };
 
+  // ---- terrain ----------------------------------------------------------------------------------
+  // Ground elevation along the ray for azimuths az0..az1 (every PROFILE_AZ_STEP degrees), plus the pin itself.
+  function fetchProfiles(lat, lon, az0, az1, fetchFn) {
+    fetchFn = fetchFn || root.fetch.bind(root);
+    var span = ((az1 - az0) + 360) % 360, n = Math.max(1, Math.ceil(span / PROFILE_AZ_STEP)), azs = [], dists = [];
+    for (var i = 0; i <= n; i++) azs.push(az0 + span * i / n);
+    for (var d = PROFILE_STEP_KM; d <= MAX_KM; d += PROFILE_STEP_KM) dists.push(d);
+    var pts = [[lat, lon]];
+    azs.forEach(function (az) { dists.forEach(function (d) { pts.push(dest(lat, lon, az, d)); }); });
+    var batches = [];
+    for (var j = 0; j < pts.length; j += 100) batches.push(pts.slice(j, j + 100));
+    return Promise.all(batches.map(function (b) {
+      var q = "?latitude=" + b.map(function (p) { return p[0].toFixed(4); }).join(",") +
+        "&longitude=" + b.map(function (p) { return p[1].toFixed(4); }).join(",");
+      return fetchFn(ELEV_API + q).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+        .then(function (j) { return j.elevation || []; });
+    })).then(function (parts) {
+      var all = [].concat.apply([], parts);
+      var elev = azs.map(function (_, a) { return dists.map(function (_, k) { return Math.max(0, +all[1 + a * dists.length + k] || 0); }); });
+      return new Terrain(Math.max(0, +all[0] || 0), azs, dists, elev);
+    });
+  }
+  function Terrain(ground, azs, dists, elev) { this.ground = ground; this.azs = azs; this.dists = dists; this.elev = elev; }
+  // Elevation (m) at distance km along azimuth az: nearest profile, linear along it.
+  Terrain.prototype.at = function (az, km) {
+    var best = 0, bd = Infinity;
+    for (var i = 0; i < this.azs.length; i++) {
+      var dd = Math.abs(((az - this.azs[i]) + 540) % 360 - 180);
+      if (dd < bd) { bd = dd; best = i; }
+    }
+    var row = this.elev[best], step = PROFILE_STEP_KM;
+    if (!row || !row.length) return this.ground;
+    if (km < step) return this.ground + (row[0] - this.ground) * Math.max(0, km) / step;   // pin to first sample
+    var f = km / step - 1, k = Math.floor(f);
+    if (k >= row.length - 1) return row[row.length - 1];
+    return row[k] + (row[k + 1] - row[k]) * (f - k);
+  };
+  // The first place the ground rises above the ray (km), or null.
+  function hillsBlock(terrain, az, alt, eyeM) {
+    if (!terrain) return null;
+    for (var d = 2; d <= MAX_KM; d += 1) {
+      var h = terrain.at(az, d);
+      if (h > rayHeight(d, alt, eyeM)) return { at: d, height: h };
+    }
+    return null;
+  }
+
   // ---- verdicts ---------------------------------------------------------------------------------
   // One minute: follow the ray through each layer; the nearest stretch with a thick bank blocks the light.
-  function minute(forecast, lat, lon, ms, model, eyeM) {
+  function minute(forecast, lat, lon, ms, model, eyeM, terrain) {
     var s = sunPos(ms, lat, lon), alt = apparent(s.alt);
-    var out = { ms: ms, az: s.az, alt: alt, stretches: [], state: "clear", by: null, at: null, cover: 0 };
-    if (alt < -0.3) { out.state = "down"; return out; }   // the sun is below your horizon
+    var out = { ms: ms, az: s.az, alt: alt, stretches: [], state: "clear", by: null, at: null, cover: 0, hills: null };
+    // Below the horizon: without terrain, the sea-level horizon; with it, where the ray meets the sea.
+    if (alt < (terrain ? -0.3 - dip(eyeM) : -0.3)) { out.state = "down"; return out; }
+    out.hills = hillsBlock(terrain, s.az, alt, eyeM);
+    if (out.hills && out.hills.height < 5) { out.hills = null; out.state = "down"; return out; }   // that's the sea
     var worstPartial = null;
     layerStretches(alt, eyeM).forEach(function (st) {
       var peak = -1, peakKm = null;
@@ -199,17 +251,23 @@
       out.state = "partial"; out.by = worstPartial.layer; out.at = worstPartial.peakKm; out.cover = worstPartial.cover;
     }
     if (out.state === "clear" && out.stretches.every(function (st) { return st.state === "unknown"; })) out.state = "unknown";
+    // Hills nearer than the blocking cloud (or with nothing else in the way) hide the sun.
+    if (out.hills && (out.state !== "blocked" || out.hills.at < out.at)) {
+      out.state = "hills"; out.by = "hills"; out.at = out.hills.at; out.cover = 0;
+    }
     return out;
   }
+  // How far below level the sea horizon sits from eyeM up (degrees).
+  function dip(eyeM) { return Math.acos(R_KM * 1000 / (R_KM * 1000 + Math.max(0, eyeM))) / RAD * 0.92; }
 
   // The window around sunrise/sunset, one verdict per minute.
   function windowFor(event, rising) {
     var m = 60000;
     return rising ? [event.ms - 10 * m, event.ms + 90 * m] : [event.ms - 90 * m, event.ms + 10 * m];
   }
-  function timeline(forecast, lat, lon, from, to, model, eyeM) {
+  function timeline(forecast, lat, lon, from, to, model, eyeM, terrain) {
     var out = [];
-    for (var t = Math.ceil(from / 60000) * 60000; t <= to; t += 60000) out.push(minute(forecast, lat, lon, t, model, eyeM));
+    for (var t = Math.ceil(from / 60000) * 60000; t <= to; t += 60000) out.push(minute(forecast, lat, lon, t, model, eyeM, terrain));
     return out;
   }
   // Minutes with the light getting through, and the last (sunset) / first (sunrise) of them.
@@ -223,6 +281,7 @@
   var api = { LAYERS: LAYERS, MODELS: MODELS, MODEL_NAMES: MODEL_NAMES, MAX_KM: MAX_KM, BLOCK: BLOCK, PARTIAL: PARTIAL,
     sunPos: sunPos, apparent: apparent, sunEvent: sunEvent, dest: dest, rayHeight: rayHeight, distanceAt: distanceAt,
     layerStretches: layerStretches, nodesFor: nodesFor, fetchForecast: fetchForecast, Forecast: Forecast,
+    fetchProfiles: fetchProfiles, Terrain: Terrain, hillsBlock: hillsBlock, PROFILE_STEP_KM: PROFILE_STEP_KM,
     minute: minute, windowFor: windowFor, timeline: timeline, summary: summary };
   root.SkyLight = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;

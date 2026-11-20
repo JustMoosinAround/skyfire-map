@@ -45,10 +45,15 @@
   <section id="light" class="light" aria-label="Light check" hidden>
     <div class="light-head">
       <p id="light-verdict" class="light-verdict" aria-live="polite"></p>
+      <button id="light-section-btn" class="light-more" type="button" aria-pressed="false">Section</button>
       <button id="light-more" class="light-more" type="button" aria-expanded="false">Details</button>
     </div>
     <div id="light-bar" class="light-bar" aria-hidden="true"></div>
     <input id="light-slider" class="light-slider" type="range" min="0" max="0" value="0" aria-label="Time">
+    <figure id="section-wrap" class="section-wrap" hidden>
+      <canvas id="section" class="section" role="img" aria-label="Side view of the sun's ray toward the horizon, with the terrain and cloud layers"></canvas>
+      <figcaption id="section-caption" class="section-caption"></figcaption>
+    </figure>
     <div id="light-details" class="light-details" hidden>
       <p id="light-info" class="light-info"></p>
       <p id="light-rings" class="light-rings"></p>

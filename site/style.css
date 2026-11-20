@@ -246,6 +246,7 @@ main {
 .light-bar i.partial { background: #b97a45; }
 .light-bar i.blocked { background: #556173; }
 .light-bar i.down { background: #121a27; }
+.light-bar i.hills { background: #6b5136; }
 .light-bar i.unknown { background: repeating-linear-gradient(45deg, #263244 0 3px, #182234 3px 6px); }
 .light-bar .sunmark { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--sun); }
 .light-slider { width: 100%; margin: 0; accent-color: var(--fire); }
@@ -256,6 +257,11 @@ main {
 .model { appearance: none; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); color: var(--muted); font-size: 0.78rem; padding: 4px 10px; cursor: pointer; }
 .model b { color: var(--text); font-weight: 600; }
 .model[aria-pressed="true"] { border-color: var(--fire); color: var(--text); }
+.section-wrap { margin: 8px 0 0; }
+.section { display: block; width: 100%; height: 200px; border-radius: 8px; background: #0b111b; }
+.section-caption { margin-top: 4px; color: var(--muted); font-size: 0.75rem; }
+.light-more[aria-pressed="true"] { border-color: var(--fire); color: var(--text); }
+@media (max-width: 480px) { .section { height: 170px; } }
 .ray-label { color: var(--text); font-weight: 600; font-size: 0.68rem; text-shadow: 0 0 3px #000, 0 0 5px #000; white-space: nowrap; }
 
 /* ---- Colour key (Windy-style bar) ------------------------------------------ */

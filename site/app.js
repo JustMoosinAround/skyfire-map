@@ -931,7 +931,8 @@
   // service SkyFire uses), then follows the ray through the low, mid and high cloud for every minute.
   var EYE_M = 10;
   var LAYER_COLOUR = { low: "#ff9b5c", mid: "#c58bff", high: "#7fc8ff" };
-  var light = { key: null, state: "off", forecast: null, tl: {}, model: "auto", idx: 0, win: null, ev: null, rising: false, p: null, timer: null };
+  var light = { key: null, state: "off", forecast: null, terrain: null, eye: EYE_M, tl: {}, model: "auto", idx: 0, win: null,
+                ev: null, rising: false, p: null, timer: null, section: false };
 
   function lightOff() {
     light.state = "off";
@@ -962,12 +963,17 @@
     var w = light.win, p = light.p;
     var a0 = SkyLight.sunPos(w[0], p.lat, p.lng).az, a1 = SkyLight.sunPos(w[1], p.lat, p.lng).az;
     var nodes = SkyLight.nodesFor(p.lat, p.lng, Math.min(a0, a1) - 2, Math.max(a0, a1) + 2);
-    SkyLight.fetchForecast(nodes, new Date(w[0]).toISOString()).then(function (f) {
+    // Terrain is a bonus: without it the check still runs over a sea-level horizon.
+    var terrain = SkyLight.fetchProfiles(p.lat, p.lng, Math.min(a0, a1) - 2, Math.max(a0, a1) + 2).catch(function () { return null; });
+    Promise.all([SkyLight.fetchForecast(nodes, new Date(w[0]).toISOString()), terrain]).then(function (got) {
+      var f = got[0], t = got[1];
       if (light.key !== key) return;
       light.forecast = f;
+      light.terrain = t;
+      light.eye = t ? t.ground + 2 : EYE_M;
       light.state = "ready";
       ["auto"].concat(f.models()).forEach(function (m) {
-        light.tl[m] = SkyLight.timeline(f, p.lat, p.lng, w[0], w[1], m, EYE_M);
+        light.tl[m] = SkyLight.timeline(f, p.lat, p.lng, w[0], w[1], m, light.eye, t);
       });
       if (!light.tl[light.model]) light.model = "auto";
       renderLight();
@@ -983,6 +989,7 @@
     if (m.state === "down") return light.rising ? "The sun isn't up yet" : "The sun has set";
     if (m.state === "unknown") return "No forecast for this minute";
     if (m.state === "clear") return "Nothing blocking";
+    if (m.state === "hills") return "Behind hills " + Math.round(m.at) + " km away";
     if (m.state === "partial") return "Light through broken " + layerName(m.by) + " (" + Math.round(m.cover) + "%) " + Math.round(m.at) + " km away";
     return "Blocked by " + layerName(m.by) + " " + Math.round(m.at) + " km away";
   }
@@ -1038,6 +1045,80 @@
       models.appendChild(b);
     });
     drawRay(m);
+    if (light.section) drawSection(m);
+  }
+
+  // ---- Section: the ray from the side, over the terrain and through the cloud layers ----------
+  var SECTION_TOP_M = 12000;
+  function drawSection(m) {
+    var cv = $("section"), wrap = $("section-wrap");
+    if (wrap.hidden) return;
+    var dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+    if (!W || !H) return;
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    var ctx = cv.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    var p = light.p, f = light.forecast, t = light.terrain, eye = light.eye, alt = Math.max(m.alt, -1);
+    var exit = SkyLight.distanceAt(SECTION_TOP_M - 500, alt, eye);
+    var dMax = Math.min(SkyLight.MAX_KM, exit === null ? SkyLight.MAX_KM : Math.max(60, exit + 20));
+    var padL = 34, padB = 18, padT = 6, padR = 8;
+    var X = function (d) { return padL + (W - padL - padR) * d / dMax; };
+    var Y = function (h) { return padT + (H - padT - padB) * (1 - h / SECTION_TOP_M); };
+    // sky
+    var g = ctx.createLinearGradient(0, padT, 0, H - padB);
+    g.addColorStop(0, "#0e1a2c"); g.addColorStop(1, "#1d2a3f");
+    ctx.fillStyle = g; ctx.fillRect(padL, padT, W - padL - padR, H - padT - padB);
+    // cloud layers: each column shaded by the forecast cover where the ray's line crosses it
+    var COL = 3, x0 = Math.round(padL), x1 = Math.round(W - padR);   // whole-pixel columns: no seams
+    SkyLight.LAYERS.forEach(function (Lr) {
+      var top = Math.round(Y(Math.min(Lr.top, SECTION_TOP_M))), bottom = Math.round(Y(Lr.bottom));
+      for (var x = x0; x < x1; x += COL) {
+        var d = dMax * (x + COL / 2 - padL) / (W - padL - padR);
+        var q = SkyLight.dest(p.lat, p.lng, m.az, d), c = f.cover(q[0], q[1], Lr.id, m.ms, light.model);
+        if (c <= 0) continue;
+        ctx.fillStyle = "rgba(236,239,244," + (0.12 + 0.68 * c / 100) * (c / 100) + ")";
+        ctx.fillRect(x, top, Math.min(COL, x1 - x), bottom - top);
+      }
+      ctx.strokeStyle = LAYER_COLOUR[Lr.id]; ctx.globalAlpha = 0.5; ctx.setLineDash([3, 4]); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(padL, Y(Lr.bottom)); ctx.lineTo(W - padR, Y(Lr.bottom)); ctx.stroke();
+      ctx.setLineDash([]); ctx.globalAlpha = 1;
+      ctx.fillStyle = LAYER_COLOUR[Lr.id]; ctx.font = "600 10px system-ui, sans-serif"; ctx.textBaseline = "middle";
+      ctx.fillText(capital(Lr.id), 2, Y((Lr.bottom + Math.min(Lr.top, SECTION_TOP_M)) / 2));
+    });
+    // ground: terrain if we have it, else the sea
+    ctx.beginPath(); ctx.moveTo(X(0), Y(0));
+    for (var d = 0; d <= dMax; d += Math.max(1, dMax / 240)) ctx.lineTo(X(d), Y(t ? t.at(m.az, d) : 0));
+    ctx.lineTo(X(dMax), Y(0)); ctx.closePath();
+    ctx.fillStyle = "#4a3b2a"; ctx.fill();
+    ctx.strokeStyle = "#8a6f52"; ctx.lineWidth = 1; ctx.stroke();
+    ctx.strokeStyle = "#2f6fa8"; ctx.beginPath(); ctx.moveTo(padL, Y(0)); ctx.lineTo(W - padR, Y(0)); ctx.stroke();
+    // the ray
+    if (m.state !== "down") {
+      var stop = m.state === "blocked" || m.state === "hills" ? m.at : dMax;
+      ctx.lineWidth = 2.5; ctx.strokeStyle = "#ffd27a"; ctx.beginPath();
+      for (var d2 = 0; d2 <= stop; d2 += 1) { var h = SkyLight.rayHeight(d2, alt, eye); if (d2 === 0) ctx.moveTo(X(d2), Y(h)); else ctx.lineTo(X(d2), Y(h)); }
+      ctx.stroke();
+      if (stop < dMax) {
+        ctx.setLineDash([4, 5]); ctx.strokeStyle = "rgba(255,210,122,0.45)"; ctx.lineWidth = 1.5; ctx.beginPath();
+        for (var d3 = stop; d3 <= dMax; d3 += 1) { var h3 = SkyLight.rayHeight(d3, alt, eye); if (d3 === stop) ctx.moveTo(X(d3), Y(h3)); else ctx.lineTo(X(d3), Y(h3)); }
+        ctx.stroke(); ctx.setLineDash([]);
+        var bx = X(stop), by = Y(SkyLight.rayHeight(stop, alt, eye));
+        ctx.strokeStyle = "#ff5a4f"; ctx.lineWidth = 2.5; ctx.beginPath();
+        ctx.moveTo(bx - 5, by - 5); ctx.lineTo(bx + 5, by + 5); ctx.moveTo(bx + 5, by - 5); ctx.lineTo(bx - 5, by + 5); ctx.stroke();
+      }
+    }
+    // you
+    ctx.fillStyle = "#ff7a3d"; ctx.beginPath(); ctx.arc(X(0), Y(eye), 4, 0, 2 * Math.PI); ctx.fill();
+    // distance ticks
+    ctx.fillStyle = "#9aa6b8"; ctx.font = "10px system-ui, sans-serif"; ctx.textBaseline = "alphabetic"; ctx.textAlign = "center";
+    var tick = dMax > 250 ? 100 : 50;
+    for (var k = tick; k < dMax; k += tick) ctx.fillText(k + " km", X(k), H - 4);
+    ctx.textAlign = "left";
+    var dir = Math.round(m.az) + "° " + compass(m.az);
+    $("section-caption").textContent = "Looking toward the sun, " + dir + ". The ray climbs as the Earth curves away; heights are stretched " +
+      Math.round((dMax * 1000 / (W - padL - padR)) / (SECTION_TOP_M / (H - padT - padB))) + "×." +
+      (t ? "" : " Terrain unavailable: showing a sea-level horizon.");
+    cv.dataset.drawn = String(m.ms);
   }
 
   // On the map: the ray for this minute, coloured where it crosses each cloud layer, rings where the
@@ -1075,6 +1156,12 @@
 
   function setupLight() {
     var slider = $("light-slider");
+    $("light-section-btn").addEventListener("click", function () {
+      light.section = !light.section;
+      this.setAttribute("aria-pressed", String(light.section));
+      $("section-wrap").hidden = !light.section;
+      renderLight();
+    });
     slider.addEventListener("input", function () { light.idx = +slider.value; renderLight(); });
     $("light-more").addEventListener("click", function () {
       var open = this.getAttribute("aria-expanded") !== "true";

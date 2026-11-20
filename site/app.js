@@ -295,15 +295,31 @@
       btn.hidden = false;
     });
     window.addEventListener("appinstalled", function () { btn.hidden = true; installPrompt = null; });
-    if (inFrame() && /Android/i.test(navigator.userAgent)) btn.hidden = false;
+    // Phones always get the button: Chrome stops offering its own prompt for a while after an uninstall,
+    // and iPhones never offer one, so then the button says how to install from the browser menu.
+    var phone = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (phone) btn.hidden = false;
     btn.addEventListener("click", function () {
       if (installPrompt) {
         installPrompt.prompt();
-        installPrompt.userChoice.then(function () { installPrompt = null; btn.hidden = true; }, function () {});
+        installPrompt.userChoice.then(function () { installPrompt = null; }, function () {});
       } else if (inFrame()) {
         var a = el("a"); a.href = location.href; a.target = "_blank"; a.rel = "noopener"; a.click();
+      } else {
+        showInstallHelp();
       }
     });
+  }
+
+  function showInstallHelp() {
+    var ios = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    var note = $("map-note");
+    note.textContent = ios
+      ? "To install SkyFire: tap the Share button, then “Add to Home Screen”."
+      : "To install SkyFire: tap ⋮ at the top right of Chrome, then “Install app” or “Add to Home screen”.";
+    note.hidden = false;
+    clearTimeout(showInstallHelp.timer);
+    showInstallHelp.timer = setTimeout(function () { note.hidden = true; }, 9000);
   }
 
   function setFull(on) {

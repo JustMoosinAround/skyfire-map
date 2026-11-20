@@ -11,7 +11,7 @@
 <link rel="icon" href="icons/favicon-32.png" sizes="32x32">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
-<link rel="stylesheet" href="style.css?v=7">
+<link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
 <header class="site-header">
@@ -60,6 +60,11 @@
       <div id="light-models" class="light-models" role="group" aria-label="Forecast model"></div>
     </div>
   </section>
+  <section id="space" class="space" aria-label="Space weather now" hidden>
+    <div class="space-now" id="space-now"></div>
+    <p class="space-fc" id="space-fc"></p>
+    <p class="space-note" id="space-note"></p>
+  </section>
   <section id="legend" class="legend" aria-label="Colour key" hidden>
     <div id="key-bar" class="key-bar"></div>
     <div id="key-ticks" class="key-ticks"></div>
@@ -72,7 +77,7 @@
 </footer>
 
 <script src="vendor/leaflet/leaflet.js"></script>
-<script src="lightcheck.js?v=7"></script>
-<script src="app.js?v=7"></script>
+<script src="lightcheck.js?v=9"></script>
+<script src="app.js?v=9"></script>
 </body>
 </html>

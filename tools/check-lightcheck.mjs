@@ -6,7 +6,7 @@ const [lat, lon] = [61.2181, -149.9003];
 const now = new Date().toISOString();
 const ev = L.sunEvent(lat, lon, new Date(Date.now() + 6 * 3600e3).toISOString(), false) || L.sunEvent(lat, lon, now, false);
 console.log("sunset", ev && new Date(ev.ms).toISOString(), "az", ev && ev.az.toFixed(1));
-const w = L.windowFor(ev, false);
+const w = L.windowFor(ev, false, lat, lon);
 const a0 = L.sunPos(w[0], lat, lon).az, a1 = L.sunPos(w[1], lat, lon).az;
 const nodes = L.nodesFor(lat, lon, Math.min(a0, a1) - 2, Math.max(a0, a1) + 2);
 console.log("forecast points", nodes.length);

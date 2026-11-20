@@ -237,6 +237,7 @@ main {
 .light-verdict { flex: 1; min-width: 0; margin: 0; font-weight: 600; }
 .light-verdict .t { font-variant-numeric: tabular-nums; color: var(--muted); font-weight: 500; margin-right: 6px; }
 .light-verdict.is-clear { color: #ffb366; }
+.light-verdict.is-afterglow { color: #ff7fae; }
 .light-verdict.is-blocked { color: var(--text); }
 .light-more { flex: none; appearance: none; border: 1px solid var(--line); border-radius: 999px; background: none; color: var(--muted); font-size: 0.75rem; padding: 3px 10px; cursor: pointer; }
 .light-more:focus-visible, .light-slider:focus-visible, .model:focus-visible { outline: 2px solid var(--fire); outline-offset: 2px; }
@@ -247,6 +248,9 @@ main {
 .light-bar i.blocked { background: #556173; }
 .light-bar i.down { background: #121a27; }
 .light-bar i.hills { background: #6b5136; }
+.light-bar i.afterglow { background: #e0457b; }
+.light-bar i.twilight { background: #4a4380; }
+.light-bar i.dark { background: #0d121c; }
 .light-bar i.unknown { background: repeating-linear-gradient(45deg, #263244 0 3px, #182234 3px 6px); }
 .light-bar .sunmark { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--sun); }
 .light-slider { width: 100%; margin: 0; accent-color: var(--fire); }
@@ -263,6 +267,16 @@ main {
 .light-more[aria-pressed="true"] { border-color: var(--fire); color: var(--text); }
 @media (max-width: 480px) { .section { height: 170px; } }
 .ray-label { color: var(--text); font-weight: 600; font-size: 0.68rem; text-shadow: 0 0 3px #000, 0 0 5px #000; white-space: nowrap; }
+
+/* ---- Space weather (Aurora tab) ---------------------------------------------- */
+.space { margin-top: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--chip); }
+.space-now { display: flex; flex-wrap: wrap; gap: 8px; }
+.sw-item { flex: 1 1 90px; min-width: 0; padding: 6px 8px; border-radius: 8px; background: var(--bg); }
+.sw-item b { display: block; font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+.sw-item span { color: var(--muted); font-size: 0.75rem; }
+.sw-item.good b { color: #6fe3a0; } .sw-item.ok b { color: #f2c94c; } .sw-item.poor b { color: var(--muted); }
+.space-fc, .space-note { margin: 8px 0 0; color: var(--muted); font-size: 0.8125rem; }
+.space-fc b { color: var(--text); font-weight: 600; }
 
 /* ---- Colour key (Windy-style bar) ------------------------------------------ */
 .legend { padding: 8px 0 2px; }

@@ -36,9 +36,9 @@
     nlc:       [90, 200, 255, 0.40, 0.55],
     // Denali View: chance the mountain shows
     hidden:    [5, 8, 13, 0.50, 0.00],
-    d0:        [236, 239, 244, 0.52, 0.00],
-    d50:       [127, 209, 255, 0.55, 0.00],
-    d100:      [62, 224, 165, 0.78, 0.00],
+    d0:        [214, 84, 96, 0.55, 0.00],
+    d50:       [242, 178, 60, 0.62, 0.00],
+    d100:      [62, 224, 140, 0.80, 0.00],
   };
   var KEYS = {
     sky: [["blocked", "Cloud in the way"], ["partly", "Partly"], ["plain", "Clear, plain"], ["alpenglow", "Alpenglow"],
@@ -48,7 +48,7 @@
     nlc: [["cloudy", "Cloudy"], ["nlc", "Northern sky clear"]],
   };
   KEYS.meteor = KEYS.aurora;
-  KEYS.denali = [["hidden", "Hills in the way"], ["d0", "Cloud in the way"], ["d50", "Maybe"], ["d100", "Clear view"]];
+  KEYS.denali = [["hidden", "Hills in the way"], ["d0", "0%: cloud in the way"], ["d50", "50%"], ["d100", "100%: clear view"]];
   var NIGHT_HINT = {
     aurora: "Look north. Green and blue show clear, dark sky; white is cloud.",
     meteor: "Green and blue show clear, dark sky; white is cloud.",
@@ -273,7 +273,7 @@
       .on("drag", drawSun)
       .on("dragend", function () {
         dragging = false;
-        var p = pin.getLatLng(); store.set(PIN_KEY, JSON.stringify([p.lat, p.lng])); light.key = null; drawSun();
+        movePin(pin.getLatLng());
       });
     setupLight();
   }
@@ -404,13 +404,101 @@
 
   // The explainer under the map, for the kind of map on show.
   var HOW = {
-    sky: "Colours show what kind of sky to expect: white-grey is cloud in the way, yellow is clear but plain, and orange, pink and purple are where colour is likely. Tap the map for the % chance there. Drag the sun pin to any spot: the panel under the map checks, minute by minute, whether the sun's light gets through the clouds to you, and the rings show where low, mid and high clouds meet your horizon.",
+    sky: "Colours show the % chance of a colourful sky, from grey (little chance) through yellow and orange to red and magenta (best). Tap the map to move the sun pin there and see the chance: the panel under the map checks, minute by minute until dark, whether the sun's light gets through the clouds to you and which clouds stay lit after sunset, and the rings show where low, mid and high clouds meet your horizon.",
     aurora: "Colours show where the night sky should be clear for the northern lights: green is clear and dark, blue is clear but still in twilight, teal is clear toward the north, and white-grey is cloud. Look north. Tap the map for the cloud overhead and to the north.",
     meteor: "Colours show where the night sky should be clear for meteors: green is clear and dark, blue is clear but still in twilight, and white-grey is cloud. Tap the map for the cloud overhead.",
     nlc: "Noctilucent clouds glow low in the northern sky an hour or two after sunset in summer. Blue shows where the northern sky should be clear; white-grey is cloud. Tap the map for the cloud to the north.",
-    denali: "Colours show the chance of seeing Denali from each spot at the hour you pick: green is a clear view, blue is maybe, white-grey is cloud in the way, and dark is where hills hide the mountain. Drag the pin to any spot: the line to Denali is green where the way is clear and white where cloud sits on it, and the box gives the % chance, how much of the mountain clears the hills, and the best hour in the next 2 days.",
+    denali: "Colours show the chance of seeing Denali from each spot at the hour you pick, from red (cloud in the way) through amber to green (clear view); dark is where hills hide the mountain. Tap the map to move the pin: the line to Denali is green where the way is clear and red where cloud sits on it, and the box gives the % chance, how much of the mountain clears the hills, and the best hour in the next 2 days.",
   };
+  // ---- Space weather now (Aurora tab): NOAA SWPC, refreshed every 5 minutes while showing ----------
+  var SWPC = "https://services.swpc.noaa.gov";
+  var space = { timer: null, last: 0 };
+  function getJ(url) { return fetch(url, { cache: "no-store" }).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }); }
+  function newest(rows, field) {   // newest row with a number in `field` (feeds come oldest- or newest-first)
+    var best = null;
+    (rows || []).forEach(function (r) {
+      var v = r && r[field];
+      if (v === null || v === undefined || v === "" || isNaN(+v)) return;
+      if (r.active === false) return;
+      if (!best || r.time_tag > best.time_tag) best = r;
+    });
+    return best;
+  }
+  function spaceShow(on) {
+    $("space").hidden = !on;
+    clearInterval(space.timer);
+    if (!on) return;
+    if (Date.now() - space.last > 4 * 60000) loadSpace();
+    space.timer = setInterval(function () { if (!document.hidden) loadSpace(); }, 5 * 60000);
+  }
+  function loadSpace() {
+    space.last = Date.now();
+    var kp = getJ(SWPC + "/json/planetary_k_index_1m.json").then(function (rows) { return newest(rows, "estimated_kp"); }).catch(function () { return null; });
+    var fc = getJ(SWPC + "/products/noaa-planetary-k-index-forecast.json").catch(function () { return null; });
+    // small "latest value" summaries first; the 1-minute files (large) only if those fail
+    var mag = getJ(SWPC + "/products/summary/solar-wind-mag-field.json").then(function (j) {
+      if (j && j.Bz !== undefined) return { bz: +j.Bz, bt: +j.Bt, time: j.TimeStamp };
+      throw new Error("no Bz");
+    }).catch(function () {
+      return getJ(SWPC + "/json/rtsw/rtsw_mag_1m.json").then(function (rows) { var r = newest(rows, "bz_gsm"); return r && { bz: +r.bz_gsm, bt: +r.bt, time: r.time_tag }; });
+    }).catch(function () { return null; });
+    var wind = getJ(SWPC + "/products/summary/solar-wind-speed.json").then(function (j) {
+      if (j && j.WindSpeed !== undefined) return { speed: +j.WindSpeed, time: j.TimeStamp };
+      throw new Error("no speed");
+    }).catch(function () {
+      return getJ(SWPC + "/json/rtsw/rtsw_wind_1m.json").then(function (rows) { var r = newest(rows, "proton_speed"); return r && { speed: +r.proton_speed, time: r.time_tag }; });
+    }).catch(function () { return null; });
+    Promise.all([kp, fc, mag, wind]).then(function (g) { renderSpace(g[0], g[1], g[2], g[3]); });
+  }
+  function utc(t) { return Date.parse(String(t).replace(" ", "T") + (/[zZ]|[+-]\d\d:?\d\d$/.test(String(t)) ? "" : "Z")); }
+  function swItem(label, value, unit, grade, sub) {
+    var box = el("div", "sw-item " + grade);
+    box.appendChild(el("b", null, value + (unit ? " " + unit : "")));
+    box.appendChild(el("span", null, label + (sub ? " · " + sub : "")));
+    return box;
+  }
+  function ago(ms) {
+    if (!isFinite(ms)) return "";
+    var m = Math.max(0, Math.round((Date.now() - ms) / 60000));
+    return m < 60 ? m + " min ago" : Math.round(m / 60) + " h ago";
+  }
+  function renderSpace(kp, fc, mag, wind) {
+    var now = $("space-now");
+    now.textContent = "";
+    if (!kp && !mag && !wind) {
+      now.appendChild(el("p", "space-note", "Live space weather couldn't be loaded. Check your connection; it retries every 5 minutes."));
+    }
+    if (kp) {
+      var k = +kp.estimated_kp;
+      now.appendChild(swItem("Kp now", k.toFixed(1), "", k >= 4 ? "good" : k >= 2.5 ? "ok" : "poor", ago(utc(kp.time_tag))));
+    }
+    if (mag && isFinite(mag.bz)) {
+      now.appendChild(swItem("Bz " + (mag.bz < 0 ? "south" : "north"), (mag.bz > 0 ? "+" : "") + mag.bz.toFixed(1), "nT",
+        mag.bz <= -5 ? "good" : mag.bz < 0 ? "ok" : "poor", ago(utc(mag.time))));
+    }
+    if (wind && isFinite(wind.speed)) {
+      now.appendChild(swItem("Solar wind", Math.round(wind.speed), "km/s", wind.speed >= 500 ? "good" : wind.speed >= 400 ? "ok" : "poor", ago(utc(wind.time))));
+    }
+    // the next few 3-hour Kp forecast periods, Alaska time
+    var line = $("space-fc");
+    line.textContent = "";
+    var rows = (fc || []).filter(function (r) { return r && r.observed !== "observed" && utc(r.time_tag) + 3 * 3600e3 > Date.now(); }).slice(0, 4);
+    if (rows.length) {
+      line.appendChild(document.createTextNode("Kp forecast: "));
+      rows.forEach(function (r, i) {
+        var t0 = utc(r.time_tag);
+        line.appendChild(el("b", null, (+r.kp).toFixed(1)));
+        line.appendChild(document.createTextNode(" " + timeOnly(new Date(t0).toISOString()) + "–" + timeOnly(new Date(t0 + 3 * 3600e3).toISOString()) + (i < rows.length - 1 ? " · " : "")));
+      });
+    }
+    $("space-note").textContent = "Around Anchorage, Kp 2–3 can show low in the north on a dark, clear night; Kp 4+ is a good chance. " +
+      "Bz pointing south (negative), especially below −5 nT for a while, makes aurora much more likely. NOAA SWPC, updated " +
+      timeOnly(new Date().toISOString()) + ".";
+    $("map").dataset.space = [kp ? "kp" : "", mag ? "bz" : "", wind ? "wind" : ""].join(",");
+  }
+
   function setHow(mapType) {
+    spaceShow(mapType === "aurora");
     var how = document.querySelector(".site-footer .how");
     if (how && HOW[mapType]) how.textContent = HOW[mapType];
   }
@@ -469,7 +557,21 @@
     return { lat0: lat0, dlat: dlat, dlon: dlon, start: start, rows: rows, cols: cols, cells: cells, median: median(gaps) };
   }
 
+  // Sunrise/sunset: one scale by the % chance of colour (grey, yellow, orange, red, magenta).
+  var CHANCE_STOPS = [[0, [175, 183, 196, 0.40]], [25, [242, 196, 48, 0.55]], [50, [255, 140, 50, 0.68]],
+                      [75, [236, 64, 96, 0.78]], [100, [190, 70, 220, 0.88]]];
+  function chanceRGBA(pct) {
+    var i = 1;
+    while (i < CHANCE_STOPS.length - 1 && pct > CHANCE_STOPS[i][0]) i++;
+    var a = CHANCE_STOPS[i - 1], b = CHANCE_STOPS[i], f = Math.max(0, Math.min(1, (pct - a[0]) / (b[0] - a[0])));
+    return [0, 1, 2, 3].map(function (k) { return a[1][k] + (b[1][k] - a[1][k]) * f; });
+  }
   function rgbaOf(d) {
+    var chance = d[7] && d[7].chance;
+    if (typeof chance === "number") {
+      var c = chanceRGBA(chance);
+      return [c[0] * c[3], c[1] * c[3], c[2] * c[3], c[3]];
+    }
     var s = STYLE[d[2]];
     if (!s) {   // a kind this page has no colour for: use its legend colour, half see-through
       var hex = /^#([0-9a-f]{6})$/i.exec(d[3] || "");
@@ -555,8 +657,19 @@
     return bestD <= limit * limit ? best : null;
   }
 
+  // Put the pin somewhere new (tap or drag): remember it and redraw the line and light check.
+  function movePin(ll) {
+    if (!pin) return;
+    pin.setLatLng(ll);
+    store.set(PIN_KEY, JSON.stringify([ll.lat, ll.lng]));
+    light.key = null;
+    drawSun();
+  }
+
   function onTap(e) {
     var tab = current, file = tab && tab.data;
+    var pinTab = file && tab.file && showSun && (file.map_type === "sky" || file.map_type === "denali");
+    if (pinTab) movePin(e.latlng);
     if (file && tab.file && file.map_type === "denali") { denaliPopup(file, e.latlng); return; }
     if (!file || !tab.file || !file.dots || !file.dots.length) return;
     var d = nearestDot(file, e.latlng.lat, e.latlng.lng);
@@ -627,6 +740,14 @@
     var key = KEYS[mapType];
     var bar = $("key-bar"), ticks = $("key-ticks");
     ticks.textContent = "";
+    if (mapType === "sky") {   // the % chance scale
+      bar.style.background = "linear-gradient(90deg," + CHANCE_STOPS.map(function (st) {
+        var c = st[1]; return "rgba(" + c[0] + "," + c[1] + "," + c[2] + "," + Math.min(1, c[3] + 0.15) + ") " + st[0] + "%";
+      }).join(",") + ")";
+      ["0%", "25%", "50%", "75%", "100% chance of colour"].forEach(function (t) { ticks.appendChild(el("span", null, t)); });
+      $("legend").hidden = false;
+      return;
+    }
     if (!key) {   // unknown map type: fall back to the legend's own colours
       key = ((index.legend && index.legend[mapType]) || []).map(function (row) { return [row[0], row[2], row[1]]; });
     }
@@ -809,6 +930,11 @@
     }
     return cv.toDataURL("image/png");
   }
+  // The Denali scale as a CSS colour, x from 0 (no chance) to 1 (clear).
+  function scaleColour(x) {
+    var a = STYLE.d0, m = STYLE.d50, b = STYLE.d100, lo = x < 0.5 ? a : m, hi = x < 0.5 ? m : b, f = x < 0.5 ? x / 0.5 : (x - 0.5) / 0.5;
+    return "rgb(" + [0, 1, 2].map(function (k) { return Math.round(lo[k] + (hi[k] - lo[k]) * f); }).join(",") + ")";
+  }
   function denaliWords(v) {
     if (v.hidden) return "Hills hide Denali from here";
     return "Denali: " + v.chance + "% chance";
@@ -839,13 +965,11 @@
     for (var i = 0; i < n; i++) {
       var a = [p.lat + (t.lat - p.lat) * i / n, p.lng + (t.lon - p.lng) * i / n];
       var b = [p.lat + (t.lat - p.lat) * (i + 1) / n, p.lng + (t.lon - p.lng) * (i + 1) / n];
-      var clear = 1 - v.segs[i] / 100;   // green where the way is clear, white where cloud sits on it
-      var col = "rgb(" + Math.round(236 - 174 * clear) + "," + Math.round(239 - 15 * clear) + "," + Math.round(244 - 79 * clear) + ")";
+      var col = scaleColour(1 - v.segs[i] / 100);   // green where the way is clear, red where cloud sits on it
       L.polyline([a, b], { pane: "sun", color: v.hidden ? "#7d8796" : col, weight: 4, opacity: 0.95, lineCap: "butt", interactive: false }).addTo(sunLayer);
     }
-    var clearCap = 1 - v.cap / 100;
     L.circleMarker([t.lat, t.lon], { pane: "sun", radius: 7, weight: 2, color: "#0d1420", fillOpacity: 1, interactive: false,
-      fillColor: v.hidden ? "#7d8796" : "rgb(" + Math.round(236 - 174 * clearCap) + "," + Math.round(239 - 15 * clearCap) + "," + Math.round(244 - 79 * clearCap) + ")" }).addTo(sunLayer);
+      fillColor: v.hidden ? "#7d8796" : scaleColour(1 - v.cap / 100) }).addTo(sunLayer);
     var h = hourLabel(file.hours[denaliHour]);
     box.appendChild(el("p", "sun-head", denaliWords(v) + " · " + h.day + " " + h.time));
     if (!v.hidden) box.appendChild(el("p", "sun-help", "Cloud on the way " + Math.round(Math.max(v.low, v.mid)) + "% · on the mountain " + Math.round(v.cap) + "%"));
@@ -857,7 +981,7 @@
       var bh = hourLabel(file.hours[bestI]);
       box.appendChild(el("p", "sun-key", "Best in the next 2 days: " + bh.day + " " + bh.time + " (" + best + "%)"));
     }
-    box.appendChild(el("p", "sun-help", "Drag the pin to any spot. The line is green where the way is clear, white where cloud sits on it."));
+    box.appendChild(el("p", "sun-help", "Tap or drag the pin to any spot. The line is green where the way is clear, red where cloud sits on it."));
     $("map").dataset.denali = v.hidden ? "hidden" : String(v.chance);
   }
 
@@ -965,7 +1089,7 @@
   function lightFor(p, ev, rising) {
     var key = p.lat.toFixed(3) + "," + p.lng.toFixed(3) + "," + (rising ? "r" : "s") + "," + new Date(ev.time).toISOString().slice(0, 13);
     light.p = p; light.ev = { ms: ev.time.getTime(), az: ev.az }; light.rising = rising;
-    light.win = SkyLight.windowFor(light.ev, rising);
+    light.win = SkyLight.windowFor(light.ev, rising, p.lat, p.lng);
     $("light").hidden = false;
     $("sunbox").hidden = true;   // the panel under the map says it all; keep the map clear
     if (key !== light.key) {
@@ -973,7 +1097,8 @@
       light.state = "loading";
       light.forecast = null;
       light.tl = {};
-      light.idx = Math.round((rising ? 10 + 10 : 90 - 10));   // 10 min after sunrise / before sunset
+      // start 10 min before sunset / after sunrise
+      light.idx = Math.round((light.ev.ms + (rising ? 10 : -10) * 60000 - Math.ceil(light.win[0] / 60000) * 60000) / 60000);
       clearTimeout(light.timer);
       light.timer = setTimeout(function () { loadLight(key); }, dragging ? 99999999 : 250);
     }
@@ -1014,6 +1139,12 @@
   function layerName(id) { return { low: "low clouds", mid: "mid clouds", high: "high clouds" }[id]; }
   function verdictText(m) {
     if (m.state === "down") return light.rising ? "The sun isn't up yet" : "The sun has set";
+    if (m.state === "dark") return "Dark";
+    if (m.state === "twilight") return "Clear twilight: no cloud in sunlight";
+    if (m.state === "afterglow") {
+      var where = m.at < 25 ? "overhead" : Math.round(m.at) + "–" + Math.round(m.to) + " km toward the sun";
+      return (light.rising ? "Dawn glow: " : "Afterglow: ") + layerName(m.by) + " " + where + " still in sunlight";
+    }
     if (m.state === "unknown") return "No forecast for this minute";
     if (m.state === "clear") return "Nothing blocking";
     if (m.state === "hills") return "Behind hills " + Math.round(m.at) + " km away";
@@ -1052,8 +1183,11 @@
     mapEl.dataset.verdict = m.state + (m.by ? ":" + m.by : "");
     // details: sunset, last light, minutes of light; where each layer meets the ray now; models
     var sum = SkyLight.summary(tl, light.rising), word = light.rising ? "Sunrise" : "Sunset";
-    var info = word + " " + timeOnly(new Date(light.ev.ms).toISOString()) + " · ";
-    info += sum.edge ? (light.rising ? "first light " : "last light ") + timeOnly(new Date(sum.edge).toISOString()) + " · " + sum.minutesLit + " min of light" : "no direct light in this window";
+    var hm = function (ms) { return timeOnly(new Date(ms).toISOString()); };
+    var info = word + " " + hm(light.ev.ms) + " · ";
+    info += sum.edge ? (light.rising ? "first light " : "last light ") + hm(sum.edge) + " · " + sum.minutesLit + " min of light" : "no direct light";
+    if (sum.minutesGlow) info += " · " + (light.rising ? "glow from " : "afterglow until ") + hm(sum.glowEdge);
+    if (sum.dark) info += " · " + (light.rising ? "dark until " : "dark at ") + hm(sum.dark);
     $("light-info").textContent = info;
     var rings = $("light-rings");
     rings.textContent = "";
@@ -1063,7 +1197,7 @@
         rings.appendChild(sw);
         rings.appendChild(document.createTextNode(capital(st.layer) + " " + Math.round(st.from) + "–" + (st.to >= SkyLight.MAX_KM ? Math.round(st.to) + "+" : Math.round(st.to)) + " km"));
       });
-    } else rings.textContent = "Rings appear while the sun is up.";
+    } else rings.textContent = "The sun is down: the Section view shows the Earth's shadow climbing through the clouds.";
     var models = $("light-models");
     models.textContent = "";
     Object.keys(light.tl).forEach(function (id) {
@@ -1090,10 +1224,11 @@
     var ctx = cv.getContext("2d");
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     var p = light.p, f = light.forecast, t = light.terrain, eye = light.eye, alt = Math.max(m.alt, -1);
-    var exit = SkyLight.distanceAt(SECTION_TOP_M - 500, alt, eye);
+    var exit = m.alt < 0 ? null : SkyLight.distanceAt(SECTION_TOP_M - 500, alt, eye);
     var dMax = Math.min(SkyLight.MAX_KM, exit === null ? SkyLight.MAX_KM : Math.max(60, exit + 20));
     var padL = 34, padB = 18, padT = 6, padR = 8;
-    var X = function (d) { return padL + (W - padL - padR) * d / dMax; };
+    var dMin = -Math.min(SkyLight.BEHIND_KM, Math.round(dMax * 0.25));   // a stretch behind you too
+    var X = function (d) { return padL + (W - padL - padR) * (d - dMin) / (dMax - dMin); };
     var Y = function (h) { return padT + (H - padT - padB) * (1 - h / SECTION_TOP_M); };
     // sky
     var g = ctx.createLinearGradient(0, padT, 0, H - padB);
@@ -1104,8 +1239,8 @@
     SkyLight.LAYERS.forEach(function (Lr) {
       var top = Math.round(Y(Math.min(Lr.top, SECTION_TOP_M))), bottom = Math.round(Y(Lr.bottom));
       for (var x = x0; x < x1; x += COL) {
-        var d = dMax * (x + COL / 2 - padL) / (W - padL - padR);
-        var q = SkyLight.dest(p.lat, p.lng, m.az, d), c = f.cover(q[0], q[1], Lr.id, m.ms, light.model);
+        var d = dMin + (dMax - dMin) * (x + COL / 2 - padL) / (W - padL - padR);
+        var q = SkyLight.dest(p.lat, p.lng, d < 0 ? m.az + 180 : m.az, Math.abs(d)), c = f.cover(q[0], q[1], Lr.id, m.ms, light.model);
         if (c <= 0) continue;
         ctx.fillStyle = "rgba(236,239,244," + (0.12 + 0.68 * c / 100) * (c / 100) + ")";
         ctx.fillRect(x, top, Math.min(COL, x1 - x), bottom - top);
@@ -1117,14 +1252,27 @@
       ctx.fillText(capital(Lr.id), 2, Y((Lr.bottom + Math.min(Lr.top, SECTION_TOP_M)) / 2));
     });
     // ground: terrain if we have it, else the sea
-    ctx.beginPath(); ctx.moveTo(X(0), Y(0));
-    for (var d = 0; d <= dMax; d += Math.max(1, dMax / 240)) ctx.lineTo(X(d), Y(t ? t.at(m.az, d) : 0));
+    ctx.beginPath(); ctx.moveTo(X(dMin), Y(0));
+    for (var d = dMin; d <= dMax; d += Math.max(1, (dMax - dMin) / 240)) ctx.lineTo(X(d), Y(t ? t.at(m.az, d) : 0));
     ctx.lineTo(X(dMax), Y(0)); ctx.closePath();
     ctx.fillStyle = "#4a3b2a"; ctx.fill();
     ctx.strokeStyle = "#8a6f52"; ctx.lineWidth = 1; ctx.stroke();
     ctx.strokeStyle = "#2f6fa8"; ctx.beginPath(); ctx.moveTo(padL, Y(0)); ctx.lineTo(W - padR, Y(0)); ctx.stroke();
+    // the Earth's shadow, once the sun is down: everything below the line is in shadow
+    if (m.alt < 0) {
+      ctx.beginPath(); ctx.moveTo(X(dMin), Y(SECTION_TOP_M));
+      for (var ds = dMin; ds <= dMax; ds += Math.max(1, dMax / 200)) ctx.lineTo(X(ds), Y(Math.min(SECTION_TOP_M, SkyLight.shadowHeight(ds, -m.alt))));
+      ctx.lineTo(X(dMax), Y(0)); ctx.lineTo(X(dMin), Y(0)); ctx.closePath();
+      ctx.fillStyle = "rgba(8,12,22,0.55)"; ctx.fill();
+      ctx.strokeStyle = "#e0457b"; ctx.lineWidth = 1.5; ctx.beginPath();
+      for (var ds2 = dMin; ds2 <= dMax; ds2 += Math.max(1, dMax / 200)) {
+        var hs = Math.min(SECTION_TOP_M, SkyLight.shadowHeight(ds2, -m.alt));
+        if (ds2 === dMin) ctx.moveTo(X(ds2), Y(hs)); else ctx.lineTo(X(ds2), Y(hs));
+      }
+      ctx.stroke();
+    }
     // the ray
-    if (m.state !== "down") {
+    if (m.alt >= 0 && m.state !== "afterglow" && m.state !== "twilight" && m.state !== "dark") {
       var stop = m.state === "blocked" || m.state === "hills" ? m.at : dMax;
       ctx.lineWidth = 2.5; ctx.strokeStyle = "#ffd27a"; ctx.beginPath();
       for (var d2 = 0; d2 <= stop; d2 += 1) { var h = SkyLight.rayHeight(d2, alt, eye); if (d2 === 0) ctx.moveTo(X(d2), Y(h)); else ctx.lineTo(X(d2), Y(h)); }
@@ -1144,10 +1292,17 @@
     ctx.fillStyle = "#9aa6b8"; ctx.font = "10px system-ui, sans-serif"; ctx.textBaseline = "alphabetic"; ctx.textAlign = "center";
     var tick = dMax > 250 ? 100 : 50;
     for (var k = tick; k < dMax; k += tick) ctx.fillText(k + " km", X(k), H - 4);
+    ctx.fillText("you", X(0), H - 4);
+    ctx.strokeStyle = "rgba(233,237,243,0.25)"; ctx.setLineDash([2, 4]); ctx.beginPath();
+    ctx.moveTo(X(0), padT); ctx.lineTo(X(0), H - padB); ctx.stroke(); ctx.setLineDash([]);
+    ctx.textAlign = "left"; ctx.fillText("← behind you", X(dMin) + 4, padT + 12);
+    ctx.textAlign = "right"; ctx.fillText("toward the sun →", W - padR - 4, padT + 12);
     ctx.textAlign = "left";
     var dir = Math.round(m.az) + "° " + compass(m.az);
-    $("section-caption").textContent = "Looking toward the sun, " + dir + ". The ray climbs as the Earth curves away; heights are stretched " +
-      Math.round((dMax * 1000 / (W - padL - padR)) / (SECTION_TOP_M / (H - padT - padB))) + "×." +
+    $("section-caption").textContent = "Looking toward the sun, " + dir + ". " + (m.alt < 0
+      ? "The sun is down: below the pink line is the Earth's shadow; cloud above it is still lit. Heights are stretched "
+      : "The ray climbs as the Earth curves away; heights are stretched ") +
+      Math.round(((dMax - dMin) * 1000 / (W - padL - padR)) / (SECTION_TOP_M / (H - padT - padB))) + "×." +
       (t ? "" : " Terrain unavailable: showing a sea-level horizon.");
     cv.dataset.drawn = String(m.ms);
   }
@@ -1163,7 +1318,7 @@
     }
     if (light.state !== "ready" || !showSun || !current || !current.data || current.data.map_type !== "sky") return;
     var p = light.p;
-    if (m.state === "down" || !m.stretches.length) return;
+    if (!m.stretches.length) return;   // sun down: no ray (the Section view shows the Earth's shadow)
     L.polyline([[p.lat, p.lng], SkyLight.dest(p.lat, p.lng, m.az, SkyLight.MAX_KM)],
       { pane: "sun", color: "#ffd27a", weight: 2, opacity: 0.9, dashArray: "6 6", interactive: false }).addTo(rayLayer);
     m.stretches.forEach(function (st) {

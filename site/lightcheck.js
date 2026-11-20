@@ -28,6 +28,7 @@
   // Open-Meteo's free tier counts every point (600 a minute per user), so terrain is sampled sparingly:
   // three profiles across the window's azimuths, every 5 km out to 300 km (~180 points).
   var PROFILE_STEP_KM = 5, PROFILE_MAX_KM = 300, PROFILES = 3;
+  var BEHIND_KM = 100;   // the Section view also shows this far behind you
 
   // ---- sun -------------------------------------------------------------------------------------
   function sunPos(ms, lat, lon) {   // low-precision solar position (~0.1°); alt is geometric
@@ -109,6 +110,14 @@
           if (!seen[key]) { seen[key] = 1; out.push([+q[0].toFixed(2), +q[1].toFixed(2)]); }
         });
       }
+    }
+    var back = az0 + span / 2 + 180;   // behind you, for the Section view
+    for (var b = STEP_KM; b <= BEHIND_KM; b += STEP_KM) {
+      var q = dest(lat, lon, back, b), qa = Math.floor(q[0] / GRID) * GRID, qo = Math.floor(q[1] / GRID) * GRID;
+      [[qa, qo], [qa + GRID, qo], [qa, qo + GRID], [qa + GRID, qo + GRID]].forEach(function (c) {
+        var key = c[0].toFixed(2) + "," + c[1].toFixed(2);
+        if (!seen[key]) { seen[key] = 1; out.push([+c[0].toFixed(2), +c[1].toFixed(2)]); }
+      });
     }
     return out;
   }
@@ -212,8 +221,9 @@
     var span = ((az1 - az0) + 360) % 360, n = PROFILES - 1, azs = [], dists = [];
     for (var i = 0; i <= n; i++) azs.push(az0 + span * i / n);
     for (var d = PROFILE_STEP_KM; d <= PROFILE_MAX_KM; d += PROFILE_STEP_KM) dists.push(d);
-    var pts = [[lat, lon]];
+    var pts = [[lat, lon]], backAz = az0 + span / 2 + 180, backD = [];
     azs.forEach(function (az) { dists.forEach(function (d) { pts.push(dest(lat, lon, az, d)); }); });
+    for (var bd = PROFILE_STEP_KM; bd <= BEHIND_KM; bd += PROFILE_STEP_KM) { backD.push(bd); pts.push(dest(lat, lon, backAz, bd)); }
     var batches = [];
     for (var j = 0; j < pts.length; j += 100) batches.push(pts.slice(j, j + 100));
     var urls = batches.map(function (b) {
@@ -224,12 +234,22 @@
       var parts = js.map(function (j) { return j.elevation || []; });
       var all = [].concat.apply([], parts);
       var elev = azs.map(function (_, a) { return dists.map(function (_, k) { return Math.max(0, +all[1 + a * dists.length + k] || 0); }); });
-      return new Terrain(Math.max(0, +all[0] || 0), azs, dists, elev);
+      var t = new Terrain(Math.max(0, +all[0] || 0), azs, dists, elev);
+      var off = 1 + azs.length * dists.length;
+      t.back = backD.map(function (_, k) { return Math.max(0, +all[off + k] || 0); });
+      return t;
     });
   }
   function Terrain(ground, azs, dists, elev) { this.ground = ground; this.azs = azs; this.dists = dists; this.elev = elev; }
   // Elevation (m) at distance km along azimuth az: nearest profile, linear along it.
   Terrain.prototype.at = function (az, km) {
+    if (km < 0) {   // behind you: the one profile opposite the sun
+      var bk = this.back || [], bf = -km / PROFILE_STEP_KM - 1, bi = Math.floor(bf);
+      if (!bk.length) return this.ground;
+      if (bi < 0) return this.ground + (bk[0] - this.ground) * (-km) / PROFILE_STEP_KM;
+      if (bi >= bk.length - 1) return bk[bk.length - 1];
+      return bk[bi] + (bk[bi + 1] - bk[bi]) * (bf - bi);
+    }
     var best = 0, bd = Infinity;
     for (var i = 0; i < this.azs.length; i++) {
       var dd = Math.abs(((az - this.azs[i]) + 540) % 360 - 180);
@@ -258,9 +278,9 @@
     var s = sunPos(ms, lat, lon), alt = apparent(s.alt);
     var out = { ms: ms, az: s.az, alt: alt, stretches: [], state: "clear", by: null, at: null, cover: 0, hills: null };
     // Below the horizon: without terrain, the sea-level horizon; with it, where the ray meets the sea.
-    if (alt < (terrain ? -0.3 - dip(eyeM) : -0.3)) { out.state = "down"; return out; }
+    if (alt < (terrain ? -0.3 - dip(eyeM) : -0.3)) return twilight(out, forecast, lat, lon, ms, model, eyeM);
     out.hills = hillsBlock(terrain, s.az, alt, eyeM);
-    if (out.hills && out.hills.height < 5) { out.hills = null; out.state = "down"; return out; }   // that's the sea
+    if (out.hills && out.hills.height < 5) { out.hills = null; return twilight(out, forecast, lat, lon, ms, model, eyeM); }   // that's the sea
     var worstPartial = null;
     layerStretches(alt, eyeM).forEach(function (st) {
       var peak = -1, peakKm = null;
@@ -284,13 +304,53 @@
     }
     return out;
   }
+  // ---- after sunset / before sunrise --------------------------------------------------------
+  // The sun is down here, but clouds high enough can still be in sunlight. The Earth's shadow is lowest
+  // toward the sun: at depression δ (radians), a place x km toward the sun sees the sun at δ - x/R, so it
+  // is in shadow below about R·(1/cos(δ - x/R) - 1). A cloud we can see (above our horizon) whose top
+  // reaches above the shadow is lit: the afterglow.
+  var DARK_ALT = -12;      // nautical dusk/dawn: dark enough that cloud colour is over
+  var LIT_COVER = 40;      // a layer needs at least this much cloud to make an afterglow
+  function shadowHeight(xKm, depDeg) {
+    var dx = depDeg * RAD - xKm / R_KM;
+    if (dx <= 0) return 0;
+    return R_KM * 1000 * (1 / Math.cos(dx) - 1) * (1 - K);
+  }
+  function twilight(out, forecast, lat, lon, ms, model, eyeM) {
+    if (out.alt < DARK_ALT) { out.state = "dark"; return out; }
+    var dep = -out.alt, best = null;
+    LAYERS.forEach(function (Lr) {
+      var from = null, to = null, sum = 0;
+      for (var x = 0; x <= MAX_KM; x += STEP_KM) {
+        var horizon = eyeM + x * x * 1000 * (1 - K) / (2 * R_KM);   // a cloud this far must be above this to be seen
+        if (Lr.top <= horizon) break;
+        if (Lr.top <= shadowHeight(x, dep)) continue;                 // still in the Earth's shadow
+        var p = dest(lat, lon, out.az, x), c = forecast.cover(p[0], p[1], Lr.id, ms, model);
+        if (c < LIT_COVER) continue;
+        if (from === null) from = x;
+        to = x; sum += c;
+      }
+      if (from !== null && (!best || sum > best.sum)) best = { layer: Lr.id, from: from, to: to, sum: sum };
+    });
+    if (best) { out.state = "afterglow"; out.by = best.layer; out.at = best.from; out.to = best.to; }
+    else out.state = "twilight";
+    return out;
+  }
+
   // How far below level the sea horizon sits from eyeM up (degrees).
   function dip(eyeM) { return Math.acos(R_KM * 1000 / (R_KM * 1000 + Math.max(0, eyeM))) / RAD * 0.92; }
 
   // The window around sunrise/sunset, one verdict per minute.
-  function windowFor(event, rising) {
-    var m = 60000;
-    return rising ? [event.ms - 10 * m, event.ms + 90 * m] : [event.ms - 90 * m, event.ms + 10 * m];
+  // From 90 min before sunset until dark (sun 12° down, at most 3 h), or from dark until 90 min after sunrise.
+  function windowFor(event, rising, lat, lon) {
+    var m = 60000, edge = 180;
+    if (lat != null) {
+      for (var k = 5; k <= 180; k++) {
+        var t = event.ms + (rising ? -k : k) * m;
+        if (apparent(sunPos(t, lat, lon).alt) < DARK_ALT) { edge = k; break; }
+      }
+    }
+    return rising ? [event.ms - edge * m, event.ms + 90 * m] : [event.ms - 90 * m, event.ms + edge * m];
   }
   function timeline(forecast, lat, lon, from, to, model, eyeM, terrain) {
     var out = [];
@@ -301,15 +361,19 @@
   function summary(tl, rising) {
     var lit = tl.filter(function (x) { return x.state === "clear" || x.state === "partial"; });
     var key = lit.length ? (rising ? lit[0] : lit[lit.length - 1]) : null;
+    var glow = tl.filter(function (x) { return x.state === "afterglow"; });
+    var dark = tl.filter(function (x) { return x.state === "dark"; });
     return { minutesLit: lit.length, minutesClear: tl.filter(function (x) { return x.state === "clear"; }).length,
-             edge: key ? key.ms : null };
+             edge: key ? key.ms : null, minutesGlow: glow.length,
+             glowEdge: glow.length ? (rising ? glow[0].ms : glow[glow.length - 1].ms) : null,
+             dark: dark.length ? (rising ? dark[dark.length - 1].ms : dark[0].ms) : null };
   }
 
   var api = { LAYERS: LAYERS, MODELS: MODELS, MODEL_NAMES: MODEL_NAMES, MAX_KM: MAX_KM, BLOCK: BLOCK, PARTIAL: PARTIAL,
     sunPos: sunPos, apparent: apparent, sunEvent: sunEvent, dest: dest, rayHeight: rayHeight, distanceAt: distanceAt,
     layerStretches: layerStretches, nodesFor: nodesFor, fetchForecast: fetchForecast, Forecast: Forecast,
-    fetchProfiles: fetchProfiles, Terrain: Terrain, hillsBlock: hillsBlock, PROFILE_STEP_KM: PROFILE_STEP_KM,
-    minute: minute, windowFor: windowFor, timeline: timeline, summary: summary };
+    fetchProfiles: fetchProfiles, BEHIND_KM: BEHIND_KM, Terrain: Terrain, hillsBlock: hillsBlock, PROFILE_STEP_KM: PROFILE_STEP_KM,
+    minute: minute, windowFor: windowFor, shadowHeight: shadowHeight, DARK_ALT: DARK_ALT, timeline: timeline, summary: summary };
   root.SkyLight = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

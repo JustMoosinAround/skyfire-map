@@ -91,8 +91,8 @@
 
   // ---- State ----------------------------------------------------------------
   var index, map, tabFiles = {}, current = null, loadToken = 0;
-  var fieldLayer = null, pointsLayer, sunLayer, detailLayers, pin;
-  var opacity = FIELD_OPACITY, showPoints = false, showSun = true, dragging = false;
+  var fieldLayer = null, sunLayer, detailLayers, pin;
+  var opacity = FIELD_OPACITY, showSun = true, dragging = false;
 
   // ---- Start ----------------------------------------------------------------
   fetch("data/index.json", { cache: "no-store" })
@@ -191,9 +191,9 @@
     map.zoomControl.setPosition("bottomright");
     // Panes, bottom to top: our land, OSM detail tiles (close zoom), hillshade, coast/roads, colour layer,
     // points, base labels, spots (marker pane), sun line.
-    [["land", 150], ["shade", 250], ["lines", 260], ["field", 410], ["points", 420], ["labels", 430], ["sun", 650], ["pin", 660]]
+    [["land", 150], ["shade", 250], ["lines", 260], ["field", 410], ["labels", 430], ["sun", 650], ["pin", 660]]
       .forEach(function (p) { map.createPane(p[0]).style.zIndex = p[1]; });
-    ["land", "shade", "lines", "field", "points", "labels", "sun"].forEach(function (p) { map.getPane(p).style.pointerEvents = "none"; });
+    ["land", "shade", "lines", "field", "labels", "sun"].forEach(function (p) { map.getPane(p).style.pointerEvents = "none"; });
 
     // Whole area at the lowest zoom (a phone is narrower than zoom 6); start close to Anchorage.
     map.setMinZoom(Math.min(6, map.getBoundsZoom(bounds)));
@@ -206,7 +206,6 @@
     detailLayers = L.layerGroup();   // our own coast, roads and labels: hidden once OSM detail shows
     fetch("assets/basemap.json").then(function (r) { return r.json(); }).then(drawBase, function () { /* sea + hillshade only */ });
 
-    pointsLayer = L.layerGroup().addTo(map);
     sunLayer = L.layerGroup().addTo(map);
     map.on("click", onTap);
     map.on("zoomend", toggleDetail);
@@ -246,7 +245,7 @@
 
   // ---- Controls: full screen, sun line, points ----------------------------------
   function setupControls() {
-    ["btn-install", "btn-full", "btn-sun", "btn-pts", "sunbox"].forEach(function (id) {
+    ["btn-install", "btn-full", "btn-sun", "sunbox"].forEach(function (id) {
       L.DomEvent.disableClickPropagation($(id));
       L.DomEvent.disableScrollPropagation($(id));
     });
@@ -254,9 +253,6 @@
     setupInstall();
     $("btn-sun").addEventListener("click", function () {
       showSun = !showSun; this.setAttribute("aria-pressed", String(showSun)); drawSun();
-    });
-    $("btn-pts").addEventListener("click", function () {
-      showPoints = !showPoints; this.setAttribute("aria-pressed", String(showPoints)); drawPoints();
     });
     document.addEventListener("fullscreenchange", function () { if (!document.fullscreenElement) setFull(false); });
     document.addEventListener("keydown", function (e) {
@@ -383,11 +379,24 @@
   function clearField() {
     if (fieldLayer) { map.removeLayer(fieldLayer); fieldLayer = null; }
     $("hours").hidden = true;
-    pointsLayer.clearLayers();
+  }
+
+  // The explainer under the map, for the kind of map on show.
+  var HOW = {
+    sky: "Colours show what kind of sky to expect: white-grey is cloud in the way, yellow is clear but plain, and orange, pink and purple are where colour is likely. Tap the map for the % chance there. Drag the sun pin to any spot: the panel under the map checks, minute by minute, whether the sun's light gets through the clouds to you, and the rings show where low, mid and high clouds meet your horizon.",
+    aurora: "Colours show where the night sky should be clear for the northern lights: green is clear and dark, blue is clear but still in twilight, teal is clear toward the north, and white-grey is cloud. Look north. Tap the map for the cloud overhead and to the north.",
+    meteor: "Colours show where the night sky should be clear for meteors: green is clear and dark, blue is clear but still in twilight, and white-grey is cloud. Tap the map for the cloud overhead.",
+    nlc: "Noctilucent clouds glow low in the northern sky an hour or two after sunset in summer. Blue shows where the northern sky should be clear; white-grey is cloud. Tap the map for the cloud to the north.",
+    denali: "Colours show the chance of seeing Denali from each spot at the hour you pick: green is a clear view, blue is maybe, white-grey is cloud in the way, and dark is where hills hide the mountain. Drag the pin to any spot: the line to Denali is green where the way is clear and white where cloud sits on it, and the box gives the % chance, how much of the mountain clears the hills, and the best hour in the next 2 days.",
+  };
+  function setHow(mapType) {
+    var how = document.querySelector(".site-footer .how");
+    if (how && HOW[mapType]) how.textContent = HOW[mapType];
   }
 
   function drawTab(tab, file) {
     current.data = file;
+    setHow(file.map_type);
     if (file.map_type === "denali") { drawDenaliTab(tab, file); return; }
     $("hours").hidden = true;
     if (!file.grid) file.grid = buildGrid(file.dots);
@@ -396,7 +405,6 @@
       fieldLayer = L.imageOverlay(file.image, [[EXTENT.south, EXTENT.west], [EXTENT.north, EXTENT.east]],
         { pane: "field", className: "field", interactive: false, opacity: opacity }).addTo(map);
     }
-    drawPoints();
     showKey(file.map_type);
     drawSun();
     var mapEl = $("map");
@@ -505,18 +513,6 @@
       cv = out;
     }
     return cv.toDataURL("image/png");
-  }
-
-  function drawPoints() {
-    pointsLayer.clearLayers();
-    var file = current && current.data;
-    if (!showPoints || !file || !current.file || !file.dots) return;
-    var ren = L.canvas({ pane: "points" });
-    file.dots.forEach(function (d) {
-      var s = STYLE[d[2]];
-      L.circleMarker([d[0], d[1]], { renderer: ren, radius: 1.5 + 2 * (d[4] || 0), stroke: false, fillOpacity: 0.95,
-        fillColor: s ? "rgb(" + s.slice(0, 3).join(",") + ")" : d[3], interactive: false }).addTo(pointsLayer);
-    });
   }
 
   // ---- Tap anywhere: the forecast at the nearest point ------------------------

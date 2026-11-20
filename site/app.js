@@ -1039,9 +1039,7 @@
     var sky = type === "sky" && current.file;
     if (!sky || !showSun) {
       if (pin && map.hasLayer(pin)) map.removeLayer(pin);
-      var hint = current && current.file && NIGHT_HINT[type];
-      box.hidden = !hint;
-      if (hint) box.appendChild(el("p", "sun-help", hint));
+      box.hidden = true;   // night tabs: the explainer and the space-weather panel say it (an empty box showed on phones)
       return;
     }
     if (!map.hasLayer(pin)) pin.addTo(map);

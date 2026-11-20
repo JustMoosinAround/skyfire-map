@@ -25,7 +25,9 @@
   var WEIGHTS = { ecmwf_ifs025: 2, gfs_seamless: 1, icon_seamless: 1 };   // Auto blend, as in SkyFire's %
   var API = "https://api.open-meteo.com/v1/forecast";
   var ELEV_API = "https://api.open-meteo.com/v1/elevation";   // 90 m Copernicus DEM, up to 100 points a call
-  var PROFILE_STEP_KM = 3, PROFILE_AZ_STEP = 2;
+  // Open-Meteo's free tier counts every point (600 a minute per user), so terrain is sampled sparingly:
+  // three profiles across the window's azimuths, every 5 km out to 300 km (~180 points).
+  var PROFILE_STEP_KM = 5, PROFILE_MAX_KM = 300, PROFILES = 3;
 
   // ---- sun -------------------------------------------------------------------------------------
   function sunPos(ms, lat, lon) {   // low-precision solar position (~0.1°); alt is geometric
@@ -111,22 +113,47 @@
     return out;
   }
 
+  // GET JSON from Open-Meteo, one batch after another (not all at once), retrying once after a pause if
+  // the free per-minute limit is hit. Errors carry Open-Meteo's own reason.
+  function getJson(url, fetchFn) {
+    var attempt = function (n) {
+      return fetchFn(url).then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (j) {
+          if (r.ok) return j;
+          if (r.status === 429 && n === 0) return new Promise(function (res) { setTimeout(res, 20000); }).then(function () { return attempt(1); });
+          var e = new Error((j && j.reason) || ("HTTP " + r.status));
+          e.status = r.status;
+          throw e;
+        });
+      });
+    };
+    return attempt(0);
+  }
+  function inSequence(urls, fetchFn) {
+    var out = [];
+    return urls.reduce(function (chain, u) {
+      return chain.then(function () { return getJson(u, fetchFn).then(function (j) { out.push(j); }); });
+    }, Promise.resolve()).then(function () { return out; });
+  }
+
   // Open-Meteo, same request as the SkyFire forecast runs, in batches. Resolves to a Forecast.
   function fetchForecast(nodes, dayIso, fetchFn) {
     fetchFn = fetchFn || root.fetch.bind(root);
     var day = dayIso.slice(0, 10), next = new Date(Date.parse(day + "T00:00:00Z") + 86400000).toISOString().slice(0, 10);
     var batches = [];
     for (var i = 0; i < nodes.length; i += 100) batches.push(nodes.slice(i, i + 100));
-    return Promise.all(batches.map(function (b) {
-      var q = "?latitude=" + b.map(function (p) { return p[0]; }).join(",") +
+    var urls = batches.map(function (b) {
+      return API + "?latitude=" + b.map(function (p) { return p[0]; }).join(",") +
         "&longitude=" + b.map(function (p) { return p[1]; }).join(",") +
         "&hourly=cloud_cover_low,cloud_cover_mid,cloud_cover_high&models=" + MODELS.join(",") +
         "&start_date=" + day + "&end_date=" + next + "&timezone=GMT";
-      return fetchFn(API + q).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
-        .then(function (j) { return { batch: b, entries: Array.isArray(j) ? j : [j] }; });
-    })).then(function (parts) {
+    });
+    return inSequence(urls, fetchFn).then(function (parts) {
       var f = new Forecast();
-      parts.forEach(function (p) { p.batch.forEach(function (pt, k) { f.add(pt[0], pt[1], p.entries[k]); }); });
+      parts.forEach(function (j, i) {
+        var entries = Array.isArray(j) ? j : [j];
+        batches[i].forEach(function (pt, k) { f.add(pt[0], pt[1], entries[k]); });
+      });
       return f;
     });
   }
@@ -182,19 +209,19 @@
   // Ground elevation along the ray for azimuths az0..az1 (every PROFILE_AZ_STEP degrees), plus the pin itself.
   function fetchProfiles(lat, lon, az0, az1, fetchFn) {
     fetchFn = fetchFn || root.fetch.bind(root);
-    var span = ((az1 - az0) + 360) % 360, n = Math.max(1, Math.ceil(span / PROFILE_AZ_STEP)), azs = [], dists = [];
+    var span = ((az1 - az0) + 360) % 360, n = PROFILES - 1, azs = [], dists = [];
     for (var i = 0; i <= n; i++) azs.push(az0 + span * i / n);
-    for (var d = PROFILE_STEP_KM; d <= MAX_KM; d += PROFILE_STEP_KM) dists.push(d);
+    for (var d = PROFILE_STEP_KM; d <= PROFILE_MAX_KM; d += PROFILE_STEP_KM) dists.push(d);
     var pts = [[lat, lon]];
     azs.forEach(function (az) { dists.forEach(function (d) { pts.push(dest(lat, lon, az, d)); }); });
     var batches = [];
     for (var j = 0; j < pts.length; j += 100) batches.push(pts.slice(j, j + 100));
-    return Promise.all(batches.map(function (b) {
-      var q = "?latitude=" + b.map(function (p) { return p[0].toFixed(4); }).join(",") +
+    var urls = batches.map(function (b) {
+      return ELEV_API + "?latitude=" + b.map(function (p) { return p[0].toFixed(4); }).join(",") +
         "&longitude=" + b.map(function (p) { return p[1].toFixed(4); }).join(",");
-      return fetchFn(ELEV_API + q).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
-        .then(function (j) { return j.elevation || []; });
-    })).then(function (parts) {
+    });
+    return inSequence(urls, fetchFn).then(function (js) {
+      var parts = js.map(function (j) { return j.elevation || []; });
       var all = [].concat.apply([], parts);
       var elev = azs.map(function (_, a) { return dists.map(function (_, k) { return Math.max(0, +all[1 + a * dists.length + k] || 0); }); });
       return new Terrain(Math.max(0, +all[0] || 0), azs, dists, elev);

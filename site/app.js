@@ -984,10 +984,15 @@
     var w = light.win, p = light.p;
     var a0 = SkyLight.sunPos(w[0], p.lat, p.lng).az, a1 = SkyLight.sunPos(w[1], p.lat, p.lng).az;
     var nodes = SkyLight.nodesFor(p.lat, p.lng, Math.min(a0, a1) - 2, Math.max(a0, a1) + 2);
-    // Terrain is a bonus: without it the check still runs over a sea-level horizon.
-    var terrain = SkyLight.fetchProfiles(p.lat, p.lng, Math.min(a0, a1) - 2, Math.max(a0, a1) + 2).catch(function () { return null; });
-    Promise.all([SkyLight.fetchForecast(nodes, new Date(w[0]).toISOString()), terrain]).then(function (got) {
-      var f = got[0], t = got[1];
+    // Forecast first, then terrain (one after the other keeps under the free per-minute limit). Terrain is
+    // a bonus: without it the check still runs over a sea-level horizon.
+    var forecast;
+    SkyLight.fetchForecast(nodes, new Date(w[0]).toISOString()).then(function (f) {
+      forecast = f;
+      if (light.key !== key) return null;
+      return SkyLight.fetchProfiles(p.lat, p.lng, Math.min(a0, a1) - 2, Math.max(a0, a1) + 2).catch(function () { return null; });
+    }).then(function (t) {
+      var f = forecast;
       if (light.key !== key) return;
       light.forecast = f;
       light.terrain = t;
@@ -998,9 +1003,10 @@
       });
       if (!light.tl[light.model]) light.model = "auto";
       renderLight();
-    }, function () {
+    }, function (err) {
       if (light.key !== key) return;
       light.state = "error";
+      light.error = err && err.message ? String(err.message).slice(0, 160) : "";
       renderLight();
     });
   }
@@ -1021,7 +1027,11 @@
     verdict.className = "light-verdict";
     verdict.textContent = "";
     if (light.state === "loading") { verdict.textContent = "Checking the forecast along the sun's ray…"; bar.textContent = ""; slider.disabled = true; return; }
-    if (light.state === "error") { verdict.textContent = "Couldn't download the forecast for this spot. Check your connection and move the pin to try again."; bar.textContent = ""; slider.disabled = true; return; }
+    if (light.state === "error") {
+      verdict.textContent = "Couldn't download the forecast for this spot. Check your connection and move the pin to try again." +
+        (light.error ? " (Open-Meteo said: " + light.error + ")" : "");
+      bar.textContent = ""; slider.disabled = true; return;
+    }
     if (light.state !== "ready") return;
     var tl = light.tl[light.model];
     slider.disabled = false;

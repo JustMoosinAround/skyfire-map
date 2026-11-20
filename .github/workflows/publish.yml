@@ -3,6 +3,11 @@ on:
   schedule:
     - cron: "7 14,22,4 * * *"
   workflow_dispatch:
+  # Page-only changes go live straight away, reusing the forecast data already published
+  # (no new forecast download, so the free Open-Meteo quota is untouched).
+  push:
+    branches: [main]
+    paths: ["site/**"]
 permissions:
   contents: write
 concurrency:
@@ -18,7 +23,18 @@ jobs:
         with:
           path: pub
           persist-credentials: false
+      - name: Reuse the published forecast data (page-only update)
+        if: github.event_name == 'push'
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: old
+          persist-credentials: false
+      - name: Copy the published data into the new page
+        if: github.event_name == 'push'
+        run: cp -a old/data pub/site/data
       - name: Check out the private skyfire repo (read-only token)
+        if: github.event_name != 'push'
         uses: actions/checkout@v4
         with:
           repository: JustMoosinAround/skyfire
@@ -26,16 +42,20 @@ jobs:
           path: app
           persist-credentials: false
       - uses: actions/setup-python@v5
+        if: github.event_name != 'push'
         with:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: app/pyproject.toml
       - uses: actions/cache@v4
+        if: github.event_name != 'push'
         with:
           path: app/.skyfield
           key: skyfield-de421
       - run: pip install ./app
+        if: github.event_name != 'push'
       - name: Build forecast data
+        if: github.event_name != 'push'
         # Exit 0 = success. Exit 1 (settings problem) or 2 (every map failed)
         # stops the job here, so nothing is published and the old page stays up.
         run: |

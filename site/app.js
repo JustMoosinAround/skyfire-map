@@ -246,11 +246,12 @@
 
   // ---- Controls: full screen, sun line, points ----------------------------------
   function setupControls() {
-    ["btn-full", "btn-sun", "btn-pts", "sunbox"].forEach(function (id) {
+    ["btn-install", "btn-full", "btn-sun", "btn-pts", "sunbox"].forEach(function (id) {
       L.DomEvent.disableClickPropagation($(id));
       L.DomEvent.disableScrollPropagation($(id));
     });
     $("btn-full").addEventListener("click", toggleFull);
+    setupInstall();
     $("btn-sun").addEventListener("click", function () {
       showSun = !showSun; this.setAttribute("aria-pressed", String(showSun)); drawSun();
     });
@@ -270,6 +271,34 @@
     });
     pin.on("drag", drawSun).on("dragend", function () {
       var p = pin.getLatLng(); store.set(PIN_KEY, JSON.stringify([p.lat, p.lng])); drawSun();
+    });
+  }
+
+  // ---- Installable app ------------------------------------------------------------
+  // Android (Chrome) offers "Install app" through beforeinstallprompt; inside the website's frame the
+  // browser won't, so the button opens the map in its own tab where it can be installed.
+  var installPrompt = null;
+  function setupInstall() {
+    var btn = $("btn-install");
+    var standalone = window.matchMedia && window.matchMedia("(display-mode: standalone)").matches;
+    if (standalone) return;
+    if ("serviceWorker" in navigator && window.isSecureContext) {
+      navigator.serviceWorker.register("sw.js").catch(function () { /* offline support is optional */ });
+    }
+    window.addEventListener("beforeinstallprompt", function (e) {
+      e.preventDefault();
+      installPrompt = e;
+      btn.hidden = false;
+    });
+    window.addEventListener("appinstalled", function () { btn.hidden = true; installPrompt = null; });
+    if (inFrame() && /Android/i.test(navigator.userAgent)) btn.hidden = false;
+    btn.addEventListener("click", function () {
+      if (installPrompt) {
+        installPrompt.prompt();
+        installPrompt.userChoice.then(function () { installPrompt = null; btn.hidden = true; }, function () {});
+      } else if (inFrame()) {
+        var a = el("a"); a.href = location.href; a.target = "_blank"; a.rel = "noopener"; a.click();
+      }
     });
   }
 

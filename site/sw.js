@@ -1,9 +1,10 @@
 /* SkyFire offline support.
  * The page itself (shell) is cached ahead and served cache-first, refreshed in the background.
  * Forecast data is network-first, falling back to the last copy, so the last map opens with no signal.
- * Never cached: grid.json (12 MB, only for the alert runner) and map tiles (OpenStreetMap's policy). */
-var VERSION = "skyfire-v1";
-var SHELL = ["./", "index.html", "app.js", "style.css", "manifest.webmanifest", "logo.png",
+ * Never cached: grid.json (12 MB, only for the alert runner), map tiles (OpenStreetMap's policy) and the
+ * per-spot forecast the light check downloads from Open-Meteo (another site; fetched fresh). */
+var VERSION = "skyfire-v2";
+var SHELL = ["./", "index.html", "lightcheck.js", "app.js", "style.css", "manifest.webmanifest", "logo.png",
   "vendor/leaflet/leaflet.css", "vendor/leaflet/leaflet.js",
   "assets/basemap.json", "assets/hillshade.png", "assets/denali_los.json",
   "icons/icon-192.png", "icons/icon-512.png", "icons/maskable-512.png", "icons/favicon-32.png"];

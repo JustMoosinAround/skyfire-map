@@ -121,7 +121,7 @@ main {
 .map-wrap {
   position: relative;
   flex: 1;
-  min-height: 420px;
+  min-height: 440px;
   border: 1px solid var(--line);
   border-radius: 10px;
   overflow: hidden;
@@ -230,6 +230,33 @@ main {
 .spot-star, .spot-label { color: #f4f3ef; text-shadow: 0 0 2px #000, 0 0 2px #000, 0 0 3px #000; }
 .spot-star { font-size: 16px; line-height: 18px; }
 .spot-label { font-size: 0.75rem; font-weight: 600; }
+
+/* ---- Light check: minute-by-minute verdict under the map --------------------- */
+.light { margin-top: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--chip); }
+.light-head { display: flex; align-items: baseline; gap: 10px; }
+.light-verdict { flex: 1; min-width: 0; margin: 0; font-weight: 600; }
+.light-verdict .t { font-variant-numeric: tabular-nums; color: var(--muted); font-weight: 500; margin-right: 6px; }
+.light-verdict.is-clear { color: #ffb366; }
+.light-verdict.is-blocked { color: var(--text); }
+.light-more { flex: none; appearance: none; border: 1px solid var(--line); border-radius: 999px; background: none; color: var(--muted); font-size: 0.75rem; padding: 3px 10px; cursor: pointer; }
+.light-more:focus-visible, .light-slider:focus-visible, .model:focus-visible { outline: 2px solid var(--fire); outline-offset: 2px; }
+.light-bar { position: relative; display: flex; height: 12px; margin: 8px 0 2px; border-radius: 4px; overflow: hidden; background: #0b111b; }
+.light-bar i { flex: 1; min-width: 0; }
+.light-bar i.clear { background: #ff9b3d; }
+.light-bar i.partial { background: #b97a45; }
+.light-bar i.blocked { background: #556173; }
+.light-bar i.down { background: #121a27; }
+.light-bar i.unknown { background: repeating-linear-gradient(45deg, #263244 0 3px, #182234 3px 6px); }
+.light-bar .sunmark { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--sun); }
+.light-slider { width: 100%; margin: 0; accent-color: var(--fire); }
+.light-details p { margin: 6px 0 0; font-size: 0.8125rem; color: var(--muted); }
+.light-rings i { display: inline-block; width: 14px; height: 4px; border-radius: 2px; margin: 0 4px 1px 8px; vertical-align: middle; }
+.light-rings i:first-child { margin-left: 0; }
+.light-models { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+.model { appearance: none; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); color: var(--muted); font-size: 0.78rem; padding: 4px 10px; cursor: pointer; }
+.model b { color: var(--text); font-weight: 600; }
+.model[aria-pressed="true"] { border-color: var(--fire); color: var(--text); }
+.ray-label { color: var(--text); font-weight: 600; font-size: 0.68rem; text-shadow: 0 0 3px #000, 0 0 5px #000; white-space: nowrap; }
 
 /* ---- Colour key (Windy-style bar) ------------------------------------------ */
 .legend { padding: 8px 0 2px; }

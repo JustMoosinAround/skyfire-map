@@ -44,6 +44,19 @@
     </div>
     <p id="map-note" class="map-note" hidden></p>
   </div>
+  <section id="light" class="light" aria-label="Light check" hidden>
+    <div class="light-head">
+      <p id="light-verdict" class="light-verdict" aria-live="polite"></p>
+      <button id="light-more" class="light-more" type="button" aria-expanded="false">Details</button>
+    </div>
+    <div id="light-bar" class="light-bar" aria-hidden="true"></div>
+    <input id="light-slider" class="light-slider" type="range" min="0" max="0" value="0" aria-label="Time">
+    <div id="light-details" class="light-details" hidden>
+      <p id="light-info" class="light-info"></p>
+      <p id="light-rings" class="light-rings"></p>
+      <div id="light-models" class="light-models" role="group" aria-label="Forecast model"></div>
+    </div>
+  </section>
   <section id="legend" class="legend" aria-label="Colour key" hidden>
     <div id="key-bar" class="key-bar"></div>
     <div id="key-ticks" class="key-ticks"></div>
@@ -51,11 +64,12 @@
 </main>
 
 <footer id="footer" class="site-footer" hidden>
-  <p class="how">Colours show what kind of sky to expect: white-grey is cloud in the way, yellow is clear but plain, and orange, pink and purple are where colour is likely. Tap the map for the % chance there, and drag the sun pin to see where the sun sets or rises from any spot.</p>
+  <p class="how">Colours show what kind of sky to expect: white-grey is cloud in the way, yellow is clear but plain, and orange, pink and purple are where colour is likely. Tap the map for the % chance there. Drag the sun pin to any spot: the panel under the map checks, minute by minute, whether the sun's light gets through the clouds to you, and the rings show where low, mid and high clouds meet your horizon.</p>
   <p class="small"><span class="site-credits"></span> · Refreshed 3× daily</p>
 </footer>
 
 <script src="vendor/leaflet/leaflet.js"></script>
+<script src="lightcheck.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

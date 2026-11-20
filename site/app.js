@@ -92,7 +92,7 @@
   // ---- State ----------------------------------------------------------------
   var index, map, tabFiles = {}, current = null, loadToken = 0;
   var fieldLayer = null, pointsLayer, sunLayer, detailLayers, pin;
-  var opacity = FIELD_OPACITY, showPoints = false, showSun = true;
+  var opacity = FIELD_OPACITY, showPoints = false, showSun = true, dragging = false;
 
   // ---- Start ----------------------------------------------------------------
   fetch("data/index.json", { cache: "no-store" })
@@ -269,9 +269,13 @@
       draggable: true, pane: "pin", autoPan: true, title: "Drag to move the sun line", alt: "Sun pin",
       icon: L.divIcon({ className: "", html: el("div", "pin"), iconSize: [26, 26], iconAnchor: [13, 13] }),
     });
-    pin.on("drag", drawSun).on("dragend", function () {
-      var p = pin.getLatLng(); store.set(PIN_KEY, JSON.stringify([p.lat, p.lng])); drawSun();
-    });
+    pin.on("dragstart", function () { dragging = true; })
+      .on("drag", drawSun)
+      .on("dragend", function () {
+        dragging = false;
+        var p = pin.getLatLng(); store.set(PIN_KEY, JSON.stringify([p.lat, p.lng])); light.key = null; drawSun();
+      });
+    setupLight();
   }
 
   // ---- Installable app ------------------------------------------------------------
@@ -889,6 +893,7 @@
     box.textContent = "";
     var file = current && current.data, type = file ? file.map_type : null;
     $("line-label").textContent = type === "denali" ? "Denali line" : "Sun line";
+    if (type !== "sky" || !current.file || !showSun) { lightOff(); if (rayLayer) rayLayer.clearLayers(); }
     if (type === "denali" && current.file) { drawDenaliLine(file); return; }
     var sky = type === "sky" && current.file;
     if (!sky || !showSun) {
@@ -911,9 +916,9 @@
     BANDS.forEach(function (bd) {
       var a = horizonKm(bd[0]), b = horizonKm(bd[1]);
       L.polyline([dest(p.lat, p.lng, ev.az, a), dest(p.lat, p.lng, ev.az, b)],
-        { pane: "sun", color: bd[2], weight: 7, opacity: 0.9, lineCap: "butt", interactive: false }).addTo(sunLayer);
+        { pane: "sun", color: bd[2], weight: 7, opacity: 0.9, lineCap: "butt", interactive: false, band: true }).addTo(sunLayer);
       var range = Math.round(a) + "–" + Math.round(b) + " km";
-      L.marker(dest(p.lat, p.lng, ev.az, (a + b) / 2), { pane: "sun", interactive: false, keyboard: false,
+      L.marker(dest(p.lat, p.lng, ev.az, (a + b) / 2), { pane: "sun", interactive: false, keyboard: false, band: true,
         icon: L.divIcon({ className: "hz", html: el("span", null, bd[3] + " " + range), iconSize: null, iconAnchor: [-8, 6] }) }).addTo(sunLayer);
       var row = el("p", "sun-key"), sw = el("i");
       sw.style.background = bd[2];
@@ -922,5 +927,164 @@
       box.appendChild(row);
     });
     $("map").dataset.sun = Math.round(ev.az) + "@" + ev.time.toISOString();
+    lightFor(p, ev, rising);
+  }
+
+  // ---- Light check: minute by minute, will the sun's light reach the pin? ----------------------
+  // Downloads the forecast along the sun's ray for this one spot straight from Open-Meteo (the same free
+  // service SkyFire uses), then follows the ray through the low, mid and high cloud for every minute.
+  var EYE_M = 10;
+  var LAYER_COLOUR = { low: "#ff9b5c", mid: "#c58bff", high: "#7fc8ff" };
+  var light = { key: null, state: "off", forecast: null, tl: {}, model: "auto", idx: 0, win: null, ev: null, rising: false, p: null, timer: null };
+
+  function lightOff() {
+    light.state = "off";
+    light.key = null;
+    $("light").hidden = true;
+    delete $("map").dataset.light;
+  }
+
+  function lightFor(p, ev, rising) {
+    var key = p.lat.toFixed(3) + "," + p.lng.toFixed(3) + "," + (rising ? "r" : "s") + "," + new Date(ev.time).toISOString().slice(0, 13);
+    light.p = p; light.ev = { ms: ev.time.getTime(), az: ev.az }; light.rising = rising;
+    light.win = SkyLight.windowFor(light.ev, rising);
+    $("light").hidden = false;
+    $("sunbox").hidden = true;   // the panel under the map says it all; keep the map clear
+    if (key !== light.key) {
+      light.key = key;
+      light.state = "loading";
+      light.forecast = null;
+      light.tl = {};
+      light.idx = Math.round((rising ? 10 + 10 : 90 - 10));   // 10 min after sunrise / before sunset
+      clearTimeout(light.timer);
+      light.timer = setTimeout(function () { loadLight(key); }, dragging ? 99999999 : 250);
+    }
+    renderLight();
+  }
+
+  function loadLight(key) {
+    var w = light.win, p = light.p;
+    var a0 = SkyLight.sunPos(w[0], p.lat, p.lng).az, a1 = SkyLight.sunPos(w[1], p.lat, p.lng).az;
+    var nodes = SkyLight.nodesFor(p.lat, p.lng, Math.min(a0, a1) - 2, Math.max(a0, a1) + 2);
+    SkyLight.fetchForecast(nodes, new Date(w[0]).toISOString()).then(function (f) {
+      if (light.key !== key) return;
+      light.forecast = f;
+      light.state = "ready";
+      ["auto"].concat(f.models()).forEach(function (m) {
+        light.tl[m] = SkyLight.timeline(f, p.lat, p.lng, w[0], w[1], m, EYE_M);
+      });
+      if (!light.tl[light.model]) light.model = "auto";
+      renderLight();
+    }, function () {
+      if (light.key !== key) return;
+      light.state = "error";
+      renderLight();
+    });
+  }
+
+  function layerName(id) { return { low: "low clouds", mid: "mid clouds", high: "high clouds" }[id]; }
+  function verdictText(m) {
+    if (m.state === "down") return light.rising ? "The sun isn't up yet" : "The sun has set";
+    if (m.state === "unknown") return "No forecast for this minute";
+    if (m.state === "clear") return "Nothing blocking";
+    if (m.state === "partial") return "Light through broken " + layerName(m.by) + " (" + Math.round(m.cover) + "%) " + Math.round(m.at) + " km away";
+    return "Blocked by " + layerName(m.by) + " " + Math.round(m.at) + " km away";
+  }
+
+  function renderLight() {
+    var mapEl = $("map"), verdict = $("light-verdict"), bar = $("light-bar"), slider = $("light-slider");
+    mapEl.dataset.light = light.state;
+    verdict.className = "light-verdict";
+    verdict.textContent = "";
+    if (light.state === "loading") { verdict.textContent = "Checking the forecast along the sun's ray…"; bar.textContent = ""; slider.disabled = true; return; }
+    if (light.state === "error") { verdict.textContent = "Couldn't download the forecast for this spot. Check your connection and move the pin to try again."; bar.textContent = ""; slider.disabled = true; return; }
+    if (light.state !== "ready") return;
+    var tl = light.tl[light.model];
+    slider.disabled = false;
+    slider.max = String(tl.length - 1);
+    light.idx = Math.max(0, Math.min(tl.length - 1, light.idx));
+    slider.value = String(light.idx);
+    // timeline: one cell per minute, a tick at sunset/sunrise
+    bar.textContent = "";
+    tl.forEach(function (m) { bar.appendChild(el("i", m.state)); });
+    var mark = el("span", "sunmark");
+    mark.style.left = (100 * (light.ev.ms - tl[0].ms) / (tl[tl.length - 1].ms - tl[0].ms)) + "%";
+    bar.appendChild(mark);
+    var m = tl[light.idx];
+    var t = el("span", "t", timeOnly(new Date(m.ms).toISOString()));
+    verdict.appendChild(t);
+    verdict.appendChild(document.createTextNode(verdictText(m)));
+    verdict.className = "light-verdict is-" + m.state;
+    mapEl.dataset.verdict = m.state + (m.by ? ":" + m.by : "");
+    // details: sunset, last light, minutes of light; where each layer meets the ray now; models
+    var sum = SkyLight.summary(tl, light.rising), word = light.rising ? "Sunrise" : "Sunset";
+    var info = word + " " + timeOnly(new Date(light.ev.ms).toISOString()) + " · ";
+    info += sum.edge ? (light.rising ? "first light " : "last light ") + timeOnly(new Date(sum.edge).toISOString()) + " · " + sum.minutesLit + " min of light" : "no direct light in this window";
+    $("light-info").textContent = info;
+    var rings = $("light-rings");
+    rings.textContent = "";
+    if (m.stretches.length) {
+      m.stretches.forEach(function (st) {
+        var sw = el("i"); sw.style.background = LAYER_COLOUR[st.layer];
+        rings.appendChild(sw);
+        rings.appendChild(document.createTextNode(capital(st.layer) + " " + Math.round(st.from) + "–" + (st.to >= SkyLight.MAX_KM ? Math.round(st.to) + "+" : Math.round(st.to)) + " km"));
+      });
+    } else rings.textContent = "Rings appear while the sun is up.";
+    var models = $("light-models");
+    models.textContent = "";
+    Object.keys(light.tl).forEach(function (id) {
+      var b = el("button", "model");
+      b.type = "button";
+      b.setAttribute("aria-pressed", String(id === light.model));
+      b.appendChild(el("b", null, SkyLight.MODEL_NAMES[id] + " "));
+      b.appendChild(document.createTextNode(SkyLight.summary(light.tl[id], light.rising).minutesLit + " min"));
+      b.addEventListener("click", function () { light.model = id; renderLight(); });
+      models.appendChild(b);
+    });
+    drawRay(m);
+  }
+
+  // On the map: the ray for this minute, coloured where it crosses each cloud layer, rings where the
+  // mid and high layers meet your horizon, and a cross at a blocking bank.
+  var rayLayer = null;
+  function drawRay(m) {
+    if (!rayLayer) rayLayer = L.layerGroup().addTo(map);
+    rayLayer.clearLayers();
+    if (light.state === "ready") {   // the minute-by-minute ray replaces the fixed sunset-moment bands
+      sunLayer.eachLayer(function (l) { if (l.options && l.options.band) sunLayer.removeLayer(l); });
+    }
+    if (light.state !== "ready" || !showSun || !current || !current.data || current.data.map_type !== "sky") return;
+    var p = light.p;
+    if (m.state === "down" || !m.stretches.length) return;
+    L.polyline([[p.lat, p.lng], SkyLight.dest(p.lat, p.lng, m.az, SkyLight.MAX_KM)],
+      { pane: "sun", color: "#ffd27a", weight: 2, opacity: 0.9, dashArray: "6 6", interactive: false }).addTo(rayLayer);
+    m.stretches.forEach(function (st) {
+      var to = Math.min(st.to, SkyLight.MAX_KM);
+      L.polyline([SkyLight.dest(p.lat, p.lng, m.az, st.from), SkyLight.dest(p.lat, p.lng, m.az, to)], {
+        pane: "sun", color: LAYER_COLOUR[st.layer], weight: st.state === "blocked" ? 8 : 6,
+        opacity: st.state === "blocked" ? 1 : st.state === "partial" ? 0.75 : 0.45, lineCap: "butt", interactive: false,
+      }).addTo(rayLayer);
+      if (st.from > 1) {
+        L.circle([p.lat, p.lng], { pane: "sun", radius: st.from * 1000, color: LAYER_COLOUR[st.layer], weight: 1.6,
+          opacity: 0.85, dashArray: "5 6", fill: false, interactive: false }).addTo(rayLayer);
+      }
+    });
+    if (m.state === "blocked" || m.state === "partial") {
+      var at = SkyLight.dest(p.lat, p.lng, m.az, m.at);
+      L.marker(at, { pane: "sun", interactive: false, keyboard: false, icon: L.divIcon({ className: "ray-label",
+        html: el("span", null, (m.state === "blocked" ? "✕ " : "◐ ") + capital(layerName(m.by)) + " · " + Math.round(m.at) + " km"),
+        iconSize: null, iconAnchor: [6, 8] }) }).addTo(rayLayer);
+    }
+  }
+
+  function setupLight() {
+    var slider = $("light-slider");
+    slider.addEventListener("input", function () { light.idx = +slider.value; renderLight(); });
+    $("light-more").addEventListener("click", function () {
+      var open = this.getAttribute("aria-expanded") !== "true";
+      this.setAttribute("aria-expanded", String(open));
+      this.textContent = open ? "Less" : "Details";
+      $("light-details").hidden = !open;
+    });
   }
 })();

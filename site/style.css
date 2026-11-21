@@ -357,3 +357,12 @@ body.pano-open { overflow: hidden; }
 .moon-line { color: var(--muted); font-size: 0.8125rem; margin-top: 2px !important; }
 .moon-line b { color: var(--text); font-weight: 600; }
 .moon-note { color: var(--muted); font-size: 0.75rem; margin-top: 4px !important; }
+
+/* Dark sky tonight (night tabs, in the moon card) */
+.dark-wrap { margin-top: 6px; }
+.dark-bar { display: flex; height: 10px; border-radius: 4px; overflow: hidden; background: #0b111b; }
+.dark-bar i { flex: 1; min-width: 0; }
+.dark-bar i.day { background: #3e5f86; } .dark-bar i.civil { background: #2c3e66; } .dark-bar i.nautical { background: #1e2a4a; }
+.dark-bar i.moonlit { background: #5b6478; } .dark-bar i.dark { background: #2ac58a; }
+.dark-ticks { display: flex; justify-content: space-between; color: var(--muted); font-size: 0.7rem; margin-top: 2px; }
+.leaflet-lights-pane { mix-blend-mode: screen; }

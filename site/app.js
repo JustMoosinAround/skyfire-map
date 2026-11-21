@@ -10,6 +10,10 @@
   var START = [[60.85, -150.75], [61.75, -148.85]];   // Anchorage, the Mat-Su and upper Turnagain Arm
   var HOME = [61.2181, -149.9003];                      // default sun pin: downtown Anchorage
   var TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+  // Lights on black (blends cleanly over the dark base map); the newer Black Marble has a lit land background
+  var LIGHTS_URL = "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_CityLights_2012/default/2012-01-01/GoogleMapsCompatible_Level8/{z}/{y}/{x}.jpg";
+  var LIGHTS_CREDIT = 'Night lights: <a href="https://earthdata.nasa.gov/gibs" target="_blank" rel="noopener">NASA VIIRS City Lights (GIBS)</a>';
+  var LIGHTS_KEY = "skymap.lights";
   var OSM_CREDIT = '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors';
   var DETAIL_ZOOM = 9;          // OpenStreetMap detail (roads, place names) from this zoom in
   var STORE_KEY = "skymap.tab";
@@ -119,7 +123,7 @@
 
   // ---- State ----------------------------------------------------------------
   var index, map, tabFiles = {}, current = null, loadToken = 0;
-  var fieldLayer = null, sunLayer, detailLayers, pin;
+  var fieldLayer = null, sunLayer, detailLayers, pin, lightsLayer = null;
   var opacity = FIELD_OPACITY, showSun = true, dragging = false;
 
   // ---- Start ----------------------------------------------------------------
@@ -231,6 +235,10 @@
     }
     L.tileLayer(TILES, { minZoom: DETAIL_ZOOM, maxZoom: 12, attribution: OSM_CREDIT }).addTo(map);
     L.imageOverlay("assets/hillshade.png", bounds, { pane: "shade", interactive: false, opacity: 0.85 }).addTo(map);
+    // Light pollution: NASA's night-lights imagery (VIIRS City Lights, via GIBS), blended so black is clear
+    map.createPane("lights").style.zIndex = 255;
+    map.getPane("lights").style.pointerEvents = "none";
+    lightsLayer = L.tileLayer(LIGHTS_URL, { pane: "lights", maxNativeZoom: 8, maxZoom: 12, opacity: 0.9, attribution: LIGHTS_CREDIT });
     detailLayers = L.layerGroup();   // our own coast, roads and labels: hidden once OSM detail shows
     fetch("assets/basemap.json").then(function (r) { return r.json(); }).then(drawBase, function () { /* sea + hillshade only */ });
 
@@ -273,11 +281,17 @@
 
   // ---- Controls: full screen, sun line, points ----------------------------------
   function setupControls() {
-    ["btn-install", "btn-units", "btn-full", "btn-sun", "sunbox"].forEach(function (id) {
+    ["btn-install", "btn-lights", "btn-units", "btn-full", "btn-sun", "sunbox"].forEach(function (id) {
       L.DomEvent.disableClickPropagation($(id));
       L.DomEvent.disableScrollPropagation($(id));
     });
     $("btn-full").addEventListener("click", toggleFull);
+    $("btn-lights").addEventListener("click", function () {
+      var type = current && current.data ? current.data.map_type : "sky";
+      var night = /aurora|meteor|nlc/.test(type), on = !(lightsLayer && map.hasLayer(lightsLayer));
+      store.set(LIGHTS_KEY + (night ? ".night" : ".day"), on ? "1" : "0");
+      showLights(on);
+    });
     var setUnitsLabel = function () {
       $("units-label").textContent = units === "metric" ? "km / m" : "mi / ft";
       $("btn-units").title = units === "metric" ? "Units: metric (tap for miles and feet)" : "Units: miles and feet (tap for metric)";
@@ -598,11 +612,75 @@
       note = pos.alt > 0 && pos.alt < 15 ? "Low moon in the " + compassName(pos.az) + ": a chance to frame it with the sunset or sunrise colour." : "";
     }
     $("moon-note").textContent = note;
+    var night = tab && tab.data && /aurora|meteor|nlc/.test(tab.data.map_type);
+    $("dark-wrap").hidden = !night;
+    if (night) renderDarkSky(at, p);
     box.hidden = false;
     $("map").dataset.moon = Math.round(il.fraction * 100) + "@" + Math.round(pos.alt);
   }
 
+  function lightsWanted(mapType) {
+    var night = /aurora|meteor|nlc/.test(mapType || "");
+    var saved = store.get(LIGHTS_KEY + (night ? ".night" : ".day"));
+    return saved === null ? night : saved === "1";
+  }
+  function showLights(on) {
+    if (!lightsLayer) return;
+    if (on && !map.hasLayer(lightsLayer)) lightsLayer.addTo(map);
+    if (!on && map.hasLayer(lightsLayer)) map.removeLayer(lightsLayer);
+    $("btn-lights").setAttribute("aria-pressed", String(on));
+    $("map").dataset.lights = String(on);
+  }
+
+  // Tonight from dusk to dawn, every 5 minutes: daylight, twilight, moonlit or properly dark
+  // (sun 12°+ down and the moon down or a thin crescent).
+  function skyState(ms, p) {
+    var sun = SkyLight.apparent(SkyLight.sunPos(ms, p.lat, p.lng).alt);
+    if (sun > -6) return sun > 0 ? "day" : "civil";
+    if (sun > -12) return "nautical";
+    var mo = SkyMoon.position(ms, p.lat, p.lng);
+    if (mo.alt > 0 && SkyMoon.illumination(ms).fraction > 0.25) return "moonlit";
+    return "dark";
+  }
+  function renderDarkSky(at, p) {
+    var step = 5 * 60000, from = at, to = at;
+    // the night around `at`: back and forward while the sun is below the civil-twilight line
+    while (from > at - 16 * 3600e3 && skyState(from - step, p) !== "day" && skyState(from - step, p) !== "civil") from -= step;
+    while (to < at + 16 * 3600e3 && skyState(to + step, p) !== "day" && skyState(to + step, p) !== "civil") to += step;
+    var bar = $("dark-bar"), cells = [], darkFrom = null, darkTo = null, best = null, run = null;
+    bar.textContent = "";
+    for (var t = from; t <= to; t += step) {
+      var st = skyState(t, p);
+      cells.push(st);
+      bar.appendChild(el("i", st));
+      if (st === "dark") {
+        if (!run) run = { a: t, b: t }; else run.b = t;
+        if (!best || run.b - run.a > best.b - best.a) best = { a: run.a, b: run.b };
+      } else run = null;
+    }
+    var hm = function (ms) { return timeOnly(new Date(ms).toISOString()); };
+    $("dark-start").textContent = hm(from);
+    $("dark-end").textContent = hm(to);
+    var moonlit = cells.filter(function (c) { return c === "moonlit"; }).length;
+    // the moon over this night (not the calendar day): rises/sets between dusk and dawn
+    var rs = SkyMoon.riseSet(p.lat, p.lng, from, to), up0 = SkyMoon.position(from, p.lat, p.lng).alt > 0;
+    var parts2 = [];
+    if (rs.alwaysUp) parts2.push("Moon up all night");
+    else if (rs.alwaysDown) parts2.push("Moon down all night");
+    else {
+      parts2.push(up0 ? "Moon up at dusk" : "Moon down at dusk");
+      if (rs.rise) parts2.push("rises " + hm(rs.rise));
+      if (rs.set) parts2.push("sets " + hm(rs.set));
+    }
+    $("moon-rs").textContent = "Tonight: " + parts2.join(" · ");
+    var text = best ? "Darkest: " + hm(best.a) + "–" + hm(best.b + step) + (moonlit ? " (moon down or thin)" : "") :
+      (cells.indexOf("nautical") < 0 ? "Too light all night (twilight)." : moonlit ? "No fully dark hours tonight: the moon is up whenever the sky is dark." : "No fully dark hours tonight.");
+    $("dark-text").textContent = text + " Grey = moonlit, green = dark, blue = twilight.";
+    $("map").dataset.dark = best ? String(Math.round((best.b - best.a) / 60000) + 5) : "0";
+  }
+
   function setHow(mapType) {
+    showLights(lightsWanted(mapType));
     spaceShow(mapType === "aurora");
     var how = document.querySelector(".site-footer .how");
     if (how && HOW[mapType]) how.textContent = HOW[mapType];

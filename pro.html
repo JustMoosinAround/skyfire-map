@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>SkyFire Pro</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0d1420">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+<style>
+  :root { color-scheme: dark; --bg: #0d1420; --chip: #182234; --text: #e9edf3; --muted: #9aa6b8; --line: #2f3d52; --fire: #ff7a3d; --good: #6fe3a0; --bad: #ff8a80; }
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 36rem; margin: 0 auto; padding: max(24px, env(safe-area-inset-top, 0px)) max(18px, env(safe-area-inset-right, 0px)) 40px max(18px, env(safe-area-inset-left, 0px)); }
+  .hero { display: flex; align-items: center; gap: 14px; }
+  .hero img { width: 56px; height: 56px; border-radius: 12px; }
+  h1 { margin: 0; font-size: 1.5rem; } h2 { margin: 0 0 8px; font-size: 1.05rem; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; background: var(--fire); color: #1b0f06; font-size: 0.75rem; font-weight: 800; vertical-align: 3px; }
+  .card { margin-top: 18px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--chip); }
+  .card p { margin: 0 0 8px; } .card ul { margin: 0; padding-left: 1.2em; } .card li { margin: 3px 0; }
+  .plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 10px; }
+  .plan { appearance: none; text-align: left; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--text); cursor: pointer; font: inherit; }
+  .plan b { display: block; font-size: 1.35rem; } .plan span { color: var(--muted); font-size: 0.85rem; }
+  .plan:hover, .plan:focus-visible { border-color: var(--fire); outline: none; }
+  .btn { appearance: none; border: 0; border-radius: 999px; background: var(--fire); color: #1b0f06; font: 700 0.95rem system-ui, sans-serif; padding: 10px 18px; cursor: pointer; text-decoration: none; display: inline-block; }
+  .btn.alt { background: none; color: var(--text); border: 1px solid var(--line); font-weight: 600; }
+  label { display: block; font-size: 0.85rem; color: var(--muted); margin: 8px 0 4px; }
+  input { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; }
+  .key { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; word-break: break-all; padding: 10px; border-radius: 8px; background: var(--bg); border: 1px dashed var(--line); user-select: all; }
+  .muted { color: var(--muted); font-size: 0.9rem; } .ok { color: var(--good); font-weight: 600; } .err { color: var(--bad); }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+  a { color: var(--text); } [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <div class="hero">
+    <img src="icons/icon-192.png" alt="">
+    <div><h1>SkyFire <span class="badge">Pro</span></h1><p class="muted" style="margin:2px 0 0">Plan the light, minute by minute.</p></div>
+  </div>
+
+  <p id="msg" class="card" role="status" hidden></p>
+
+  <section class="card" id="soon" hidden>
+    <h2>Coming soon</h2>
+    <p>SkyFire Pro isn't on sale yet, so every feature is free for now. <a href="./">Open the map</a>.</p>
+  </section>
+
+  <section class="card" id="mine" hidden>
+    <h2>Your SkyFire Pro</h2>
+    <p id="mine-status"></p>
+    <p class="muted">Your licence key (keep it: you'll need it with your email on another phone or computer):</p>
+    <p class="key" id="mine-key"></p>
+    <div class="row">
+      <button class="btn alt" id="copy" type="button">Copy key</button>
+      <button class="btn alt" id="manage" type="button">Manage or cancel</button>
+      <a class="btn" href="./">Open the map</a>
+    </div>
+    <p class="muted" style="margin-top:10px"><button class="btn alt" id="forget" type="button" style="padding:4px 10px;font-size:.8rem">Remove from this device</button></p>
+  </section>
+
+  <section class="card" id="buy" hidden>
+    <h2>What Pro adds</h2>
+    <ul>
+      <li><b>Light check</b>: for any spot, minute by minute until dark, does the sun's light get through the clouds, which clouds block it and how far away, and which stay lit after sunset.</li>
+      <li><b>Section</b>: the sun's ray from the side, over the terrain and through the cloud layers.</li>
+      <li><b>Panorama</b>: your skyline with named peaks, alpenglow, the sun's and moon's paths, and compass mode.</li>
+      <li><b>Rain at your spot</b> and every forecast model side by side.</li>
+    </ul>
+    <p class="muted" style="margin-top:10px">The maps, moon, space weather and Denali View stay free for everyone.</p>
+    <div class="plans">
+      <button class="plan" type="button" data-plan="month"><b id="p-month">$4.99</b><span>per month</span></button>
+      <button class="plan" type="button" data-plan="year"><b id="p-year">$29</b><span>per year · about half the monthly price</span></button>
+    </div>
+    <p class="muted" id="trial" style="margin-top:10px"></p>
+  </section>
+
+  <section class="card" id="restore">
+    <h2>Already have SkyFire Pro?</h2>
+    <form id="restore-form">
+      <label for="r-email">Email you paid with</label>
+      <input id="r-email" type="email" autocomplete="email" required>
+      <label for="r-key">Licence key</label>
+      <input id="r-key" type="text" autocomplete="off" spellcheck="false" placeholder="sf_…" required>
+      <div class="row"><button class="btn" type="submit">Use it on this device</button></div>
+    </form>
+    <p class="muted" style="margin-top:8px">Lost your key? <a href="https://www.ypsak.com/contact" target="_blank" rel="noopener">Contact me</a> with the email you paid with.</p>
+  </section>
+
+  <p class="muted" style="margin-top:22px">Payments by Stripe. Cancel any time from "Manage or cancel". Forecasts are a guide, not a guarantee.
+    <a href="terms.html">Terms</a> · <a href="privacy.html">Privacy</a></p>
+</main>
+<script src="pro.js?v=18"></script>
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  function say(text, cls) { var m = $("msg"); m.textContent = text; m.className = "card " + (cls || ""); m.hidden = !text; }
+  function date(s) { return s ? new Date(s * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : ""; }
+  function showMine() {
+    var st = SkyPro.status(), k = SkyPro.key();
+    $("mine").hidden = !k;
+    if (!k) return;
+    $("mine-key").textContent = k;
+    var words = { trialing: "Free trial", active: "Active", past_due: "Payment due", canceled: "Cancelled", unpaid: "Unpaid" };
+    $("mine-status").innerHTML = "";
+    var b = document.createElement("span");
+    b.className = st && st.active ? "ok" : "err";
+    b.textContent = (st && (words[st.status] || st.status)) || "Checking…";
+    $("mine-status").appendChild(b);
+    if (st && st.period_end) $("mine-status").appendChild(document.createTextNode(" · " + (st.status === "trialing" ? "trial ends " : st.active ? "renews " : "ended ") + date(st.period_end)));
+    if (st && st.email) $("mine-status").appendChild(document.createTextNode(" · " + st.email));
+  }
+  fetch("data/index.json", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (idx) {
+    var cfg = SkyPro.configure(idx.pro);
+    if (!cfg.enabled) { $("soon").hidden = false; $("restore").hidden = true; return; }
+    $("p-month").textContent = cfg.price_month || "$4.99";
+    $("p-year").textContent = cfg.price_year || "$29";
+    $("trial").textContent = cfg.trial_days ? "Starts with a " + cfg.trial_days + "-day free trial; cancel before it ends and you pay nothing." : "";
+    $("buy").hidden = !!SkyPro.key();
+    showMine();
+    var session = new URLSearchParams(location.search).get("session");
+    if (session) {
+      say("Setting up your SkyFire Pro…");
+      SkyPro.activate(session).then(function () {
+        say("You're all set. Your licence is saved on this device; copy the key below for your other devices.", "ok");
+        history.replaceState(null, "", location.pathname);
+        $("buy").hidden = true; showMine();
+      }, function (e) { say(e.message, "err"); });
+    } else if (/cancelled=1/.test(location.search)) {
+      say("Checkout cancelled. Nothing was charged.");
+    } else if (SkyPro.key()) {
+      SkyPro.refresh(true).then(showMine);
+    }
+  }, function () { say("SkyFire couldn't load. Check your connection and reload.", "err"); });
+
+  Array.prototype.forEach.call(document.querySelectorAll(".plan"), function (btn) {
+    btn.addEventListener("click", function () {
+      say("Opening secure checkout…");
+      SkyPro.checkout(btn.dataset.plan).then(function (r) { location.href = r.url; }, function (e) { say(e.message, "err"); });
+    });
+  });
+  $("restore-form").addEventListener("submit", function (e) {
+    e.preventDefault();
+    say("Checking…");
+    SkyPro.restore($("r-email").value, $("r-key").value).then(function (r) {
+      say(r.active ? "Done. SkyFire Pro is on for this device." : "That licence isn't active any more.", r.active ? "ok" : "err");
+      $("buy").hidden = true; showMine();
+    }, function (err) { say(err.message, "err"); });
+  });
+  $("copy").addEventListener("click", function () {
+    var k = SkyPro.key();
+    if (navigator.clipboard) navigator.clipboard.writeText(k).then(function () { say("Key copied.", "ok"); }, function () { say("Select the key and copy it."); });
+  });
+  $("manage").addEventListener("click", function () {
+    SkyPro.portal().then(function (r) { location.href = r.url; }, function (e) { say(e.message, "err"); });
+  });
+  $("forget").addEventListener("click", function () { SkyPro.forget(); $("buy").hidden = false; showMine(); say("Removed from this device."); });
+})();
+</script>
+</body>
+</html>

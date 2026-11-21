@@ -17,7 +17,8 @@
     { id: "mid", label: "Mid clouds", bottom: 2000, top: 6500 },
     { id: "high", label: "High clouds", bottom: 6500, top: 11000 },
   ];
-  var MAX_KM = 450;          // furthest the ray is followed (the high layer meets the horizon ~300-380 km out)
+  var MAX_KM = 400;          // furthest the ray is followed (the high layer meets the horizon ~300-380 km out)
+  var NEAR_KM = 150;         // forecast nodes are blended (4 around each sample) this far out; nearest one beyond
   var STEP_KM = 10;          // ray sample spacing
   var BLOCK = 70, PARTIAL = 40;   // cover (%) along a layer's stretch: blocks / thins the light
   var MODELS = ["ecmwf_ifs025", "gfs_seamless", "icon_seamless"];
@@ -95,20 +96,33 @@
   }
 
   // ---- forecast ---------------------------------------------------------------------------------
+  // The sun's azimuths over a window as an unwrapped [from, to] (to may pass 360: summer sunsets swing
+  // through north), padded by `pad` degrees.
+  function azRange(lat, lon, from, to, pad) {
+    var first = sunPos(from, lat, lon).az, lo = 0, hi = 0;
+    for (var t = from; t <= to + 1; t += 10 * 60000) {
+      var d = ((sunPos(Math.min(t, to), lat, lon).az - first + 540) % 360) - 180;
+      lo = Math.min(lo, d); hi = Math.max(hi, d);
+    }
+    pad = pad == null ? 2 : pad;
+    return [first + lo - pad, first + hi + pad];
+  }
   function node(v) { return Math.round(v / GRID) * GRID; }
   // Every forecast grid node needed to read cloud along the rays for azimuths az0..az1.
   function nodesFor(lat, lon, az0, az1) {
     var seen = {}, out = [];
+    var add = function (q) {
+      var key = q[0].toFixed(2) + "," + q[1].toFixed(2);
+      if (!seen[key]) { seen[key] = 1; out.push([+q[0].toFixed(2), +q[1].toFixed(2)]); }
+    };
     var span = ((az1 - az0) + 360) % 360, n = Math.max(1, Math.ceil(span / 2));
     for (var i = 0; i <= n; i++) {
       var az = az0 + span * i / n;
       for (var d = 0; d <= MAX_KM; d += STEP_KM) {
         var p = dest(lat, lon, az, d);
+        if (d > NEAR_KM) { add([Math.round(p[0] / GRID) * GRID, Math.round(p[1] / GRID) * GRID]); continue; }   // far: nearest node
         var la0 = Math.floor(p[0] / GRID) * GRID, lo0 = Math.floor(p[1] / GRID) * GRID;
-        [[la0, lo0], [la0 + GRID, lo0], [la0, lo0 + GRID], [la0 + GRID, lo0 + GRID]].forEach(function (q) {
-          var key = q[0].toFixed(2) + "," + q[1].toFixed(2);
-          if (!seen[key]) { seen[key] = 1; out.push([+q[0].toFixed(2), +q[1].toFixed(2)]); }
-        });
+        [[la0, lo0], [la0 + GRID, lo0], [la0, lo0 + GRID], [la0 + GRID, lo0 + GRID]].forEach(add);
       }
     }
     var back = az0 + span / 2 + 180;   // behind you, for the Section view
@@ -220,28 +234,45 @@
 
   // ---- terrain ----------------------------------------------------------------------------------
   // Ground elevation along the ray for azimuths az0..az1 (every PROFILE_AZ_STEP degrees), plus the pin itself.
-  function fetchProfiles(lat, lon, az0, az1, fetchFn) {
-    fetchFn = fetchFn || root.fetch.bind(root);
-    var span = ((az1 - az0) + 360) % 360, n = PROFILES - 1, azs = [], dists = [];
+  // Same profiles from a local elevation function (the app's own 1 km terrain): no download at all.
+  // Returns null when any point falls outside it.
+  function localProfiles(lat, lon, az0, az1, elevAt) {
+    var plan = profilePlan(lat, lon, az0, az1), vals = [];
+    for (var i = 0; i < plan.pts.length; i++) {
+      var h = elevAt(plan.pts[i][0], plan.pts[i][1]);
+      if (h === null || h === undefined) return null;
+      vals.push(h);
+    }
+    return assemble(plan, vals);
+  }
+  function profilePlan(lat, lon, az0, az1) {
+    var span = ((az1 - az0) + 360) % 360, n = PROFILES - 1, azs = [], dists = [], backD = [];
     for (var i = 0; i <= n; i++) azs.push(az0 + span * i / n);
     for (var d = PROFILE_STEP_KM; d <= PROFILE_MAX_KM; d += PROFILE_STEP_KM) dists.push(d);
-    var pts = [[lat, lon]], backAz = az0 + span / 2 + 180, backD = [];
-    azs.forEach(function (az) { dists.forEach(function (d) { pts.push(dest(lat, lon, az, d)); }); });
+    var pts = [[lat, lon]], backAz = az0 + span / 2 + 180;
+    azs.forEach(function (az) { dists.forEach(function (dd) { pts.push(dest(lat, lon, az, dd)); }); });
     for (var bd = PROFILE_STEP_KM; bd <= BEHIND_KM; bd += PROFILE_STEP_KM) { backD.push(bd); pts.push(dest(lat, lon, backAz, bd)); }
-    var batches = [];
+    return { azs: azs, dists: dists, backD: backD, pts: pts };
+  }
+  function assemble(plan, all) {
+    var azs = plan.azs, dists = plan.dists;
+    var elev = azs.map(function (_, a) { return dists.map(function (_, k) { return Math.max(0, +all[1 + a * dists.length + k] || 0); }); });
+    var t = new Terrain(Math.max(0, +all[0] || 0), azs, dists, elev);
+    var off = 1 + azs.length * dists.length;
+    t.back = plan.backD.map(function (_, k) { return Math.max(0, +all[off + k] || 0); });
+    return t;
+  }
+
+  function fetchProfiles(lat, lon, az0, az1, fetchFn) {
+    fetchFn = fetchFn || root.fetch.bind(root);
+    var plan = profilePlan(lat, lon, az0, az1), pts = plan.pts, batches = [];
     for (var j = 0; j < pts.length; j += 100) batches.push(pts.slice(j, j + 100));
     var urls = batches.map(function (b) {
       return ELEV_API + "?latitude=" + b.map(function (p) { return p[0].toFixed(4); }).join(",") +
         "&longitude=" + b.map(function (p) { return p[1].toFixed(4); }).join(",");
     });
     return inSequence(urls, fetchFn).then(function (js) {
-      var parts = js.map(function (j) { return j.elevation || []; });
-      var all = [].concat.apply([], parts);
-      var elev = azs.map(function (_, a) { return dists.map(function (_, k) { return Math.max(0, +all[1 + a * dists.length + k] || 0); }); });
-      var t = new Terrain(Math.max(0, +all[0] || 0), azs, dists, elev);
-      var off = 1 + azs.length * dists.length;
-      t.back = backD.map(function (_, k) { return Math.max(0, +all[off + k] || 0); });
-      return t;
+      return assemble(plan, [].concat.apply([], js.map(function (j) { return j.elevation || []; })));
     });
   }
   function Terrain(ground, azs, dists, elev) { this.ground = ground; this.azs = azs; this.dists = dists; this.elev = elev; }
@@ -380,8 +411,8 @@
   var api = { LAYERS: LAYERS, MODELS: MODELS, MODEL_NAMES: MODEL_NAMES, MAX_KM: MAX_KM, BLOCK: BLOCK, PARTIAL: PARTIAL,
     sunPos: sunPos, apparent: apparent, sunEvent: sunEvent, dest: dest, rayHeight: rayHeight, distanceAt: distanceAt,
     layerStretches: layerStretches, nodesFor: nodesFor, fetchForecast: fetchForecast, Forecast: Forecast,
-    fetchProfiles: fetchProfiles, BEHIND_KM: BEHIND_KM, Terrain: Terrain, hillsBlock: hillsBlock, PROFILE_STEP_KM: PROFILE_STEP_KM,
-    minute: minute, windowFor: windowFor, shadowHeight: shadowHeight, DARK_ALT: DARK_ALT, RAIN_MIN: RAIN_MIN, timeline: timeline, summary: summary };
+    fetchProfiles: fetchProfiles, localProfiles: localProfiles, BEHIND_KM: BEHIND_KM, Terrain: Terrain, hillsBlock: hillsBlock, PROFILE_STEP_KM: PROFILE_STEP_KM,
+    minute: minute, windowFor: windowFor, azRange: azRange, shadowHeight: shadowHeight, DARK_ALT: DARK_ALT, RAIN_MIN: RAIN_MIN, timeline: timeline, summary: summary };
   root.SkyLight = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

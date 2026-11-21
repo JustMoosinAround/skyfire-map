@@ -1147,15 +1147,21 @@
 
   function loadLight(key) {
     var w = light.win, p = light.p;
-    var a0 = SkyLight.sunPos(w[0], p.lat, p.lng).az, a1 = SkyLight.sunPos(w[1], p.lat, p.lng).az;
-    var nodes = SkyLight.nodesFor(p.lat, p.lng, Math.min(a0, a1) - 2, Math.max(a0, a1) + 2);
+    var rng = SkyLight.azRange(p.lat, p.lng, w[0], w[1], 2);   // unwrapped: summer sunsets swing through north
+    var nodes = SkyLight.nodesFor(p.lat, p.lng, rng[0], rng[1]);
     // Forecast first, then terrain (one after the other keeps under the free per-minute limit). Terrain is
     // a bonus: without it the check still runs over a sea-level horizon.
     var forecast;
     SkyLight.fetchForecast(nodes, new Date(w[0]).toISOString()).then(function (f) {
       forecast = f;
       if (light.key !== key) return null;
-      return SkyLight.fetchProfiles(p.lat, p.lng, Math.min(a0, a1) - 2, Math.max(a0, a1) + 2).catch(function () { return null; });
+      // Terrain: the app's own 1 km grid when the pin is inside it (no download), else Open-Meteo's.
+      var lo = rng[0], hi = rng[1];
+      var remote = function () { return SkyLight.fetchProfiles(p.lat, p.lng, lo, hi).catch(function () { return null; }); };
+      return panoData().then(function () {
+        var t = SkyLight.localProfiles(p.lat, p.lng, lo, hi, function (la, lon) { return pano.grid.at(la, lon); });
+        return t || remote();
+      }, remote);
     }).then(function (t) {
       var f = forecast;
       if (light.key !== key) return;

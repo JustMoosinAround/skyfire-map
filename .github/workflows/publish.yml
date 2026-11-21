@@ -58,6 +58,9 @@ jobs:
         if: github.event_name != 'push'
         # Exit 0 = success. Exit 1 (settings problem) or 2 (every map failed)
         # stops the job here, so nothing is published and the old page stays up.
+        env:
+          # Open-Meteo commercial plan (SkyFire Pro): when set, the customer API. Empty = free API.
+          OPEN_METEO_API_KEY: ${{ secrets.OPEN_METEO_API_KEY }}
         run: |
           cd app
           skyfire publish-map --out ../pub/site/data

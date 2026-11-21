@@ -1007,7 +1007,7 @@
     box.appendChild(el("p", "sun-head", denaliWords(v) + " · " + h.day + " " + h.time));
     if (!v.hidden) box.appendChild(el("p", "sun-help", "Cloud on the way " + Math.round(Math.max(v.low, v.mid)) + "% · on the mountain " + Math.round(v.cap) + "%"));
     var shows = v.shows == null ? "" : v.hidden ? " · hills block the view" : " · top " + fmtHeight(Math.round(v.shows / 100) * 100) + " clears the hills";
-    box.appendChild(el("p", "sun-help", fmtDist(v.dist) + " · " + Math.round(v.az) + "° " + compass(v.az) + shows));
+    box.appendChild(el("p", "sun-help", fmtDist(v.dist) + " · " + Math.round(v.az) + "° " + compassName(v.az) + shows));
     if (!v.hidden) {
       var best = 0, bestI = 0;
       file.hours.forEach(function (iso, i) { var c = denaliView(file, i, p.lat, p.lng).chance; if (c > best) { best = c; bestI = i; } });
@@ -1055,7 +1055,7 @@
   }
   // How far away a cloud base meets your horizon (from sea level), as in SkyFire's own scoring.
   function horizonKm(cloudM) { return Math.sqrt(2 * R_KM * cloudM / 1000); }
-  function compass(az) {
+  function compassName(az) {
     return ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"][Math.round(az / 22.5) % 16];
   }
 
@@ -1083,7 +1083,7 @@
     var far = dest(p.lat, p.lng, ev.az, 260), back = dest(p.lat, p.lng, ev.az + 180, 60);
     L.polyline([[p.lat, p.lng], far], { pane: "sun", color: "#ffd27a", weight: 2, opacity: 0.95, dashArray: "6 6", interactive: false }).addTo(sunLayer);
     L.polyline([[p.lat, p.lng], back], { pane: "sun", color: "#ffd27a", weight: 1.5, opacity: 0.5, dashArray: "2 6", interactive: false }).addTo(sunLayer);
-    box.appendChild(el("p", "sun-head", (rising ? "Sunrise " : "Sunset ") + timeOnly(ev.time.toISOString()) + " · " + Math.round(ev.az) + "° " + compass(ev.az)));
+    box.appendChild(el("p", "sun-head", (rising ? "Sunrise " : "Sunset ") + timeOnly(ev.time.toISOString()) + " · " + Math.round(ev.az) + "° " + compassName(ev.az)));
     box.appendChild(el("p", "sun-help", "Drag the sun pin. Cloud on the coloured bands blocks the light; gaps there let it through."));
     BANDS.forEach(function (bd) {
       var a = horizonKm(bd[0]), b = horizonKm(bd[1]);
@@ -1288,18 +1288,84 @@
       layers: SkyLight.LAYERS, shadow: SkyLight.shadowHeight, fmtHeight: fmtHeight, fmtDist: fmtDist,
     });
     var inGrid = pano.grid.at(p.lat, p.lng) !== null;
-    cap.textContent = "From the pin, facing " + Math.round(pano.center) + "° " + compass(pano.center) + ". Drag to look around; ☀ faces the sun. " +
+    cap.textContent = "From the pin, facing " + Math.round(pano.center) + "° " + compassName(pano.center) + ". " +
+      (compass.on ? "Compass on: turn with your phone (🧭 to stop). " : "Drag to look around; ☀ faces the sun; 🧭 follows your phone. ") +
       "Heights are stretched " + pano.exag + "×. " + (inGrid ? "" : "Terrain covers South-central Alaska only. ") +
       "Peak names © OpenStreetMap contributors.";
     cv.dataset.drawn = String(m.ms);
     cv.dataset.peaks = String(pano.vis.length);
   }
+  // ---- Compass mode: the panorama faces wherever the phone's back camera points ----------------
+  // Heading from the orientation sensor (Z-X'-Y' Euler angles): the camera looks along the device's -z
+  // axis; when the phone lies flat, use the direction its top points instead. Phone compasses give
+  // magnetic north; around South-central Alaska true north is ~14° west of it (declination ~14° E).
+  function declination(lat, lon) { return 14.3 + 0.35 * (lon + 150) - 0.25 * (lat - 61.2); }
+  function cameraHeading(alpha, beta, gamma) {
+    var a = alpha * RAD, b = beta * RAD, g = gamma * RAD;
+    var sA = Math.sin(a), cA = Math.cos(a), sB = Math.sin(b), cB = Math.cos(b), sG = Math.sin(g), cG = Math.cos(g);
+    var vx = -(cA * sG + sA * sB * cG), vy = -(sA * sG - cA * sB * cG), vz = -cB * cG;
+    if (Math.abs(vz) > 0.9) return (360 - alpha) % 360;   // lying flat: where the top of the phone points
+    return (Math.atan2(vx, vy) / RAD + 360) % 360;
+  }
+  var compass = { on: false, heading: null, seen: false, frame: null };
+  function onOrientation(e) {
+    if (!compass.on) return;
+    var mag = null;
+    if (typeof e.webkitCompassHeading === "number" && e.beta !== null) {
+      // iPhone: webkitCompassHeading is where the top points; derive the camera direction from it
+      var alphaN = (360 - e.webkitCompassHeading) % 360;
+      mag = cameraHeading(alphaN, e.beta, e.gamma || 0);
+    } else if (e.absolute && e.alpha !== null) {
+      mag = cameraHeading(e.alpha, e.beta || 0, e.gamma || 0);
+    }
+    if (mag === null) return;
+    compass.seen = true;
+    var p = pin ? pin.getLatLng() : { lat: 61.2, lng: -150 };
+    var trueH = (mag + declination(p.lat, p.lng) + 360) % 360;
+    // smooth (circular low-pass) so the view doesn't jitter
+    if (compass.heading === null) compass.heading = trueH;
+    else compass.heading = (compass.heading + (((trueH - compass.heading + 540) % 360) - 180) * 0.25 + 360) % 360;
+    if (!compass.frame) compass.frame = requestAnimationFrame(function () {
+      compass.frame = null;
+      pano.center = compass.heading;
+      if (light.state === "ready") renderLight();
+    });
+  }
+  function setCompass(on) {
+    var btn = $("pano-compass"), cap = $("pano-caption");
+    compass.on = on;
+    btn.setAttribute("aria-pressed", String(on));
+    window.removeEventListener("deviceorientationabsolute", onOrientation);
+    window.removeEventListener("deviceorientation", onOrientation);
+    if (!on) { compass.heading = null; return; }
+    compass.seen = false;
+    window.addEventListener("deviceorientationabsolute", onOrientation);
+    window.addEventListener("deviceorientation", onOrientation);
+    setTimeout(function () {
+      if (compass.on && !compass.seen) {
+        setCompass(false);
+        cap.textContent = "No compass found. Compass mode needs a phone or tablet with a compass (and, on iPhone, permission for motion and orientation).";
+      }
+    }, 2500);
+  }
+  function toggleCompass() {
+    if (compass.on) { setCompass(false); return; }
+    var D = window.DeviceOrientationEvent;
+    if (D && typeof D.requestPermission === "function") {   // iPhone and iPad ask first
+      D.requestPermission().then(function (r) {
+        if (r === "granted") setCompass(true);
+        else $("pano-caption").textContent = "Compass mode needs permission for motion and orientation. Allow it in Safari's settings for this site.";
+      }, function () { $("pano-caption").textContent = "Compass mode needs permission for motion and orientation."; });
+    } else setCompass(true);
+  }
+
   function setupPano() {
     var cv = $("pano");
     if (!cv.addEventListener || !cv.getContext) return;
     var dragX = null, startC = 0;
     var redraw = function () { if (light.state === "ready") renderLight(); };
-    cv.addEventListener("pointerdown", function (e) { dragX = e.clientX; startC = pano.center || 0; cv.setPointerCapture(e.pointerId); });
+    $("pano-compass").addEventListener("click", toggleCompass);
+    cv.addEventListener("pointerdown", function (e) { if (compass.on) return; dragX = e.clientX; startC = pano.center || 0; cv.setPointerCapture(e.pointerId); });
     cv.addEventListener("pointermove", function (e) {
       if (dragX === null) return;
       pano.center = ((startC - (e.clientX - dragX) * (pano.fov || 40) / cv.clientWidth) + 360) % 360;
@@ -1307,7 +1373,7 @@
     });
     var end = function () { dragX = null; };
     cv.addEventListener("pointerup", end); cv.addEventListener("pointercancel", end);
-    $("pano-sun").addEventListener("click", function () { pano.center = null; redraw(); });
+    $("pano-sun").addEventListener("click", function () { if (compass.on) setCompass(false); pano.center = null; redraw(); });
     $("pano-in").addEventListener("click", function () { pano.fov = Math.max(10, (pano.fov || 40) / 1.5); redraw(); });
     $("pano-out").addEventListener("click", function () { pano.fov = Math.min(180, (pano.fov || 40) * 1.5); redraw(); });
   }
@@ -1397,7 +1463,7 @@
     ctx.textAlign = "left"; ctx.fillText("← behind you", X(dMin) + 4, padT + 12);
     ctx.textAlign = "right"; ctx.fillText("toward the sun →", W - padR - 4, padT + 12);
     ctx.textAlign = "left";
-    var dir = Math.round(m.az) + "° " + compass(m.az);
+    var dir = Math.round(m.az) + "° " + compassName(m.az);
     $("section-caption").textContent = "Looking toward the sun, " + dir + ". " + (m.alt < 0
       ? "The sun is down: below the pink line is the Earth's shadow; cloud above it is still lit. Heights are stretched "
       : "The ray climbs as the Earth curves away; heights are stretched ") +

@@ -266,6 +266,7 @@ main {
 .pano { display: block; width: 100%; height: 260px; border-radius: 8px; background: #0b111b; touch-action: pan-y; cursor: grab; }
 .pano-ctl { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; }
 .pano-btn { appearance: none; width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--text); font-size: 0.9rem; cursor: pointer; }
+.pano-btn[aria-pressed="true"] { border-color: var(--fire); background: #3a2414; }
 .pano-btn:focus-visible { outline: 2px solid var(--fire); outline-offset: 2px; }
 @media (max-width: 480px) { .pano { height: 240px; } }
 .section { display: block; width: 100%; height: 200px; border-radius: 8px; background: #0b111b; }

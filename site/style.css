@@ -377,3 +377,11 @@ body.pano-open { overflow: hidden; }
 .btn-pro { display: inline-block; padding: 8px 16px; border-radius: 999px; background: var(--fire); color: #1b0f06; font-weight: 700; font-size: 0.875rem; text-decoration: none; }
 .btn-pro.alt { background: none; color: var(--text); border: 1px solid var(--line); font-weight: 600; }
 .btn-pro:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+/* ---- Send a sky photo (development: photos compared with the forecast) --------------- */
+.photo-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 8px 0 0; }
+.photo-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--chip); color: var(--text); font-size: 0.85rem; font-weight: 600; text-decoration: none; }
+.photo-btn svg { width: 16px; height: 16px; }
+.photo-btn:focus-visible { outline: 2px solid var(--fire); outline-offset: 2px; }
+.photo-note { flex: 1 1 200px; color: var(--muted); font-size: 0.75rem; }
+body.full .photo-row { display: none; }

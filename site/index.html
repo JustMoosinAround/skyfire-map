@@ -11,7 +11,7 @@
 <link rel="icon" href="icons/favicon-32.png" sizes="32x32">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
-<link rel="stylesheet" href="style.css?v=10">
+<link rel="stylesheet" href="style.css?v=11">
 </head>
 <body>
 <header class="site-header">
@@ -35,6 +35,8 @@
     <div class="controls">
       <button class="ctl" id="btn-install" type="button" title="Install the SkyFire app" hidden>
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M8 1.5v8.5M4.5 6.5 8 10l3.5-3.5M2 11.5v3h12v-3"/></svg><span>Install app</span></button>
+      <button class="ctl" id="btn-units" type="button" title="Switch units">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M1.5 11.5h13M3 11.5v-3M6 11.5v-2M9 11.5v-3M12 11.5v-2"/></svg><span id="units-label">mi / ft</span></button>
       <button class="ctl" id="btn-full" type="button" aria-pressed="false" title="Full screen">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M1.5 5.5v-4h4M10.5 1.5h4v4M14.5 10.5v4h-4M5.5 14.5h-4v-4"/></svg><span>Full screen</span></button>
       <button class="ctl" id="btn-sun" type="button" aria-pressed="true" title="Sun line">
@@ -45,11 +47,23 @@
   <section id="light" class="light" aria-label="Light check" hidden>
     <div class="light-head">
       <p id="light-verdict" class="light-verdict" aria-live="polite"></p>
+      <button id="light-pano-btn" class="light-more" type="button" aria-pressed="false">Panorama</button>
       <button id="light-section-btn" class="light-more" type="button" aria-pressed="false">Section</button>
       <button id="light-more" class="light-more" type="button" aria-expanded="false">Details</button>
     </div>
     <div id="light-bar" class="light-bar" aria-hidden="true"></div>
     <input id="light-slider" class="light-slider" type="range" min="0" max="0" value="0" aria-label="Time">
+    <figure id="pano-wrap" class="section-wrap" hidden>
+      <div class="pano-box">
+        <canvas id="pano" class="pano" role="img" aria-label="Panorama from the pin: the skyline with named peaks, the sun's path and the forecast cloud"></canvas>
+        <div class="pano-ctl">
+          <button id="pano-sun" class="pano-btn" type="button" title="Face the sun">☀</button>
+          <button id="pano-out" class="pano-btn" type="button" title="Zoom out">−</button>
+          <button id="pano-in" class="pano-btn" type="button" title="Zoom in">+</button>
+        </div>
+      </div>
+      <figcaption id="pano-caption" class="section-caption"></figcaption>
+    </figure>
     <figure id="section-wrap" class="section-wrap" hidden>
       <canvas id="section" class="section" role="img" aria-label="Side view of the sun's ray toward the horizon, with the terrain and cloud layers"></canvas>
       <figcaption id="section-caption" class="section-caption"></figcaption>
@@ -77,7 +91,8 @@
 </footer>
 
 <script src="vendor/leaflet/leaflet.js"></script>
-<script src="lightcheck.js?v=10"></script>
-<script src="app.js?v=10"></script>
+<script src="lightcheck.js?v=11"></script>
+<script src="panorama.js?v=11"></script>
+<script src="app.js?v=11"></script>
 </body>
 </html>

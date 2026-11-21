@@ -67,6 +67,25 @@
     set: function (k, v) { try { window.localStorage.setItem(k, v); } catch (e) { /* ignore */ } },
   };
 
+  // ---- Units: imperial (mi, ft) or metric (km, m), remembered per viewer ---------------------
+  var UNITS_KEY = "skymap.units";
+  var units = store.get(UNITS_KEY) === "metric" ? "metric" : "imperial";
+  function fmtDist(km) {
+    if (units === "metric") return Math.round(km) + " km";
+    var mi = km * 0.621371;
+    return (mi < 10 ? mi.toFixed(1).replace(/\.0$/, "") : Math.round(mi)) + " mi";
+  }
+  function fmtRange(a, b, open) {   // "71–124 km" / "44–77 mi"
+    var k = units === "metric" ? 1 : 0.621371, u = units === "metric" ? " km" : " mi";
+    return Math.round(a * k) + "–" + Math.round(b * k) + (open ? "+" : "") + u;
+  }
+  function fmtHeight(m) {
+    return units === "metric" ? Math.round(m).toLocaleString("en-US") + " m" : Math.round(m * 3.28084).toLocaleString("en-US") + " ft";
+  }
+  function distTick(km) {   // axis label for a whole number of the user's unit
+    return units === "metric" ? km + " km" : Math.round(km * 0.621371) + " mi";
+  }
+
   // ---- Alaska-time formatting ------------------------------------------------
   var parts = (function () {
     var f = new Intl.DateTimeFormat("en-US", {
@@ -249,11 +268,25 @@
 
   // ---- Controls: full screen, sun line, points ----------------------------------
   function setupControls() {
-    ["btn-install", "btn-full", "btn-sun", "sunbox"].forEach(function (id) {
+    ["btn-install", "btn-units", "btn-full", "btn-sun", "sunbox"].forEach(function (id) {
       L.DomEvent.disableClickPropagation($(id));
       L.DomEvent.disableScrollPropagation($(id));
     });
     $("btn-full").addEventListener("click", toggleFull);
+    var setUnitsLabel = function () {
+      $("units-label").textContent = units === "metric" ? "km / m" : "mi / ft";
+      $("btn-units").title = units === "metric" ? "Units: metric (tap for miles and feet)" : "Units: miles and feet (tap for metric)";
+    };
+    setUnitsLabel();
+    $("btn-units").addEventListener("click", function () {
+      units = units === "metric" ? "imperial" : "metric";
+      store.set(UNITS_KEY, units);
+      setUnitsLabel();
+      map.closePopup();
+      drawSun();                      // Denali box, static bands
+      if (light.state === "ready") renderLight();   // verdict, rings, section, panorama
+      $("map").dataset.units = units;
+    });
     setupInstall();
     $("btn-sun").addEventListener("click", function () {
       showSun = !showSun; this.setAttribute("aria-pressed", String(showSun)); drawSun();
@@ -943,7 +976,7 @@
     var v = denaliView(file, denaliHour, ll.lat, ll.lng), box = el("div", "pop");
     box.appendChild(el("p", "pop-chance", denaliWords(v)));
     var h = hourLabel(file.hours[denaliHour]);
-    box.appendChild(el("p", "pop-when", h.day + " " + h.time + " · " + Math.round(v.dist) + " km away"));
+    box.appendChild(el("p", "pop-when", h.day + " " + h.time + " · " + fmtDist(v.dist) + " away"));
     if (!v.hidden) {
       box.appendChild(el("p", "pop-metrics", "Low cloud on the way " + Math.round(v.low) + "% · mid cloud " +
         Math.round(v.mid) + "% · cloud on the mountain " + Math.round(v.cap) + "%"));
@@ -973,8 +1006,8 @@
     var h = hourLabel(file.hours[denaliHour]);
     box.appendChild(el("p", "sun-head", denaliWords(v) + " · " + h.day + " " + h.time));
     if (!v.hidden) box.appendChild(el("p", "sun-help", "Cloud on the way " + Math.round(Math.max(v.low, v.mid)) + "% · on the mountain " + Math.round(v.cap) + "%"));
-    var shows = v.shows == null ? "" : v.hidden ? " · hills block the view" : " · top " + (Math.round(v.shows / 100) * 100).toLocaleString("en-US") + " m clears the hills";
-    box.appendChild(el("p", "sun-help", Math.round(v.dist) + " km · " + Math.round(v.az) + "° " + compass(v.az) + shows));
+    var shows = v.shows == null ? "" : v.hidden ? " · hills block the view" : " · top " + fmtHeight(Math.round(v.shows / 100) * 100) + " clears the hills";
+    box.appendChild(el("p", "sun-help", fmtDist(v.dist) + " · " + Math.round(v.az) + "° " + compass(v.az) + shows));
     if (!v.hidden) {
       var best = 0, bestI = 0;
       file.hours.forEach(function (iso, i) { var c = denaliView(file, i, p.lat, p.lng).chance; if (c > best) { best = c; bestI = i; } });
@@ -1056,7 +1089,7 @@
       var a = horizonKm(bd[0]), b = horizonKm(bd[1]);
       L.polyline([dest(p.lat, p.lng, ev.az, a), dest(p.lat, p.lng, ev.az, b)],
         { pane: "sun", color: bd[2], weight: 7, opacity: 0.9, lineCap: "butt", interactive: false, band: true }).addTo(sunLayer);
-      var range = Math.round(a) + "–" + Math.round(b) + " km";
+      var range = fmtRange(a, b);
       L.marker(dest(p.lat, p.lng, ev.az, (a + b) / 2), { pane: "sun", interactive: false, keyboard: false, band: true,
         icon: L.divIcon({ className: "hz", html: el("span", null, bd[3] + " " + range), iconSize: null, iconAnchor: [-8, 6] }) }).addTo(sunLayer);
       var row = el("p", "sun-key"), sw = el("i");
@@ -1140,14 +1173,14 @@
     if (m.state === "dark") return "Dark";
     if (m.state === "twilight") return "Clear twilight: no cloud in sunlight";
     if (m.state === "afterglow") {
-      var where = m.at < 25 ? "overhead" : Math.round(m.at) + "–" + Math.round(m.to) + " km toward the sun";
+      var where = m.at < 25 ? "overhead" : fmtRange(m.at, m.to) + " toward the sun";
       return (light.rising ? "Dawn glow: " : "Afterglow: ") + layerName(m.by) + " " + where + " still in sunlight";
     }
     if (m.state === "unknown") return "No forecast for this minute";
     if (m.state === "clear") return "Nothing blocking";
-    if (m.state === "hills") return "Behind hills " + Math.round(m.at) + " km away";
-    if (m.state === "partial") return "Light through broken " + layerName(m.by) + " (" + Math.round(m.cover) + "%) " + Math.round(m.at) + " km away";
-    return "Blocked by " + layerName(m.by) + " " + Math.round(m.at) + " km away";
+    if (m.state === "hills") return "Behind hills " + fmtDist(m.at) + " away";
+    if (m.state === "partial") return "Light through broken " + layerName(m.by) + " (" + Math.round(m.cover) + "%) " + fmtDist(m.at) + " away";
+    return "Blocked by " + layerName(m.by) + " " + fmtDist(m.at) + " away";
   }
 
   function renderLight() {
@@ -1193,7 +1226,7 @@
       m.stretches.forEach(function (st) {
         var sw = el("i"); sw.style.background = LAYER_COLOUR[st.layer];
         rings.appendChild(sw);
-        rings.appendChild(document.createTextNode(capital(st.layer) + " " + Math.round(st.from) + "–" + (st.to >= SkyLight.MAX_KM ? Math.round(st.to) + "+" : Math.round(st.to)) + " km"));
+        rings.appendChild(document.createTextNode(capital(st.layer) + " " + fmtRange(st.from, st.to, st.to >= SkyLight.MAX_KM)));
       });
     } else rings.textContent = "The sun is down: the Section view shows the Earth's shadow climbing through the clouds.";
     var models = $("light-models");
@@ -1209,6 +1242,74 @@
     });
     drawRay(m);
     if (light.section) drawSection(m);
+    if (light.pano) drawPano(m);
+  }
+
+  // ---- Panorama: the skyline from the pin (PeakFinder-style), with the sun's path and the cloud ----
+  var pano = { grid: null, peaks: null, loading: null, sky: null, key: null, vis: null, center: null, fov: null, exag: 3 };
+  function panoData() {
+    if (!pano.loading) {
+      pano.loading = Promise.all([
+        SkyPano.loadGrid(),
+        fetch("assets/peaks.json").then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
+      ]).then(function (g) { pano.grid = g[0]; pano.peaks = g[1]; }, function () { pano.loading = null; throw new Error("terrain"); });
+    }
+    return pano.loading;
+  }
+  function drawPano(m) {
+    var cv = $("pano"), cap = $("pano-caption");
+    if ($("pano-wrap").hidden || !cv.getContext) return;
+    if (!pano.grid) {
+      cap.textContent = "Loading the terrain…";
+      panoData().then(function () { if (light.pano) drawPano(m); }, function () { cap.textContent = "The terrain couldn't be loaded. Check your connection."; });
+      return;
+    }
+    var p = light.p, key = p.lat.toFixed(4) + "," + p.lng.toFixed(4);
+    if (pano.key !== key) {
+      var ground = light.terrain ? light.terrain.ground : pano.grid.at(p.lat, p.lng);
+      pano.sky = SkyPano.skyline(pano.grid, p.lat, p.lng, (ground || 0) + 2);
+      pano.vis = SkyPano.visiblePeaks(pano.grid, pano.sky, pano.peaks);
+      pano.key = key;
+      pano.center = null;
+    }
+    if (pano.center === null) pano.center = m.az;
+    if (pano.fov === null) pano.fov = Math.max(25, Math.min(70, cv.clientWidth / 12));   // ~30° on a phone, wider on a computer
+    // the sun's path for the day, every 4 minutes
+    var path = [];
+    for (var t = light.ev.ms - 8 * 3600e3; t <= light.ev.ms + 8 * 3600e3; t += 4 * 60000) {
+      var s = SkyLight.sunPos(t, p.lat, p.lng);
+      path.push({ az: s.az, alt: SkyLight.apparent(s.alt) });
+    }
+    var f = light.forecast;
+    SkyPano.draw(cv, {
+      sky: pano.sky, peaks: pano.vis, centerAz: pano.center, fov: pano.fov, exag: pano.exag,
+      sunPath: path, sun: { az: m.az, alt: m.alt },
+      clouds: function (az, km, layer) { var q = SkyLight.dest(p.lat, p.lng, az, km); return f.cover(q[0], q[1], layer, m.ms, light.model); },
+      layers: SkyLight.LAYERS, shadow: SkyLight.shadowHeight, fmtHeight: fmtHeight, fmtDist: fmtDist,
+    });
+    var inGrid = pano.grid.at(p.lat, p.lng) !== null;
+    cap.textContent = "From the pin, facing " + Math.round(pano.center) + "° " + compass(pano.center) + ". Drag to look around; ☀ faces the sun. " +
+      "Heights are stretched " + pano.exag + "×. " + (inGrid ? "" : "Terrain covers South-central Alaska only. ") +
+      "Peak names © OpenStreetMap contributors.";
+    cv.dataset.drawn = String(m.ms);
+    cv.dataset.peaks = String(pano.vis.length);
+  }
+  function setupPano() {
+    var cv = $("pano");
+    if (!cv.addEventListener || !cv.getContext) return;
+    var dragX = null, startC = 0;
+    var redraw = function () { if (light.state === "ready") renderLight(); };
+    cv.addEventListener("pointerdown", function (e) { dragX = e.clientX; startC = pano.center || 0; cv.setPointerCapture(e.pointerId); });
+    cv.addEventListener("pointermove", function (e) {
+      if (dragX === null) return;
+      pano.center = ((startC - (e.clientX - dragX) * (pano.fov || 40) / cv.clientWidth) + 360) % 360;
+      redraw();
+    });
+    var end = function () { dragX = null; };
+    cv.addEventListener("pointerup", end); cv.addEventListener("pointercancel", end);
+    $("pano-sun").addEventListener("click", function () { pano.center = null; redraw(); });
+    $("pano-in").addEventListener("click", function () { pano.fov = Math.max(10, (pano.fov || 40) / 1.5); redraw(); });
+    $("pano-out").addEventListener("click", function () { pano.fov = Math.min(180, (pano.fov || 40) * 1.5); redraw(); });
   }
 
   // ---- Section: the ray from the side, over the terrain and through the cloud layers ----------
@@ -1288,8 +1389,8 @@
     ctx.fillStyle = "#ff7a3d"; ctx.beginPath(); ctx.arc(X(0), Y(eye), 4, 0, 2 * Math.PI); ctx.fill();
     // distance ticks
     ctx.fillStyle = "#9aa6b8"; ctx.font = "10px system-ui, sans-serif"; ctx.textBaseline = "alphabetic"; ctx.textAlign = "center";
-    var tick = dMax > 250 ? 100 : 50;
-    for (var k = tick; k < dMax; k += tick) ctx.fillText(k + " km", X(k), H - 4);
+    var unitKm = units === "metric" ? 1 : 1.609344, tick = (dMax > 250 ? 100 : 50) * (units === "metric" ? 1 : 0.6);
+    for (var k = tick; k < dMax / unitKm; k += tick) ctx.fillText(Math.round(k) + (units === "metric" ? " km" : " mi"), X(k * unitKm), H - 4);
     ctx.fillText("you", X(0), H - 4);
     ctx.strokeStyle = "rgba(233,237,243,0.25)"; ctx.setLineDash([2, 4]); ctx.beginPath();
     ctx.moveTo(X(0), padT); ctx.lineTo(X(0), H - padB); ctx.stroke(); ctx.setLineDash([]);
@@ -1333,13 +1434,20 @@
     if (m.state === "blocked" || m.state === "partial") {
       var at = SkyLight.dest(p.lat, p.lng, m.az, m.at);
       L.marker(at, { pane: "sun", interactive: false, keyboard: false, icon: L.divIcon({ className: "ray-label",
-        html: el("span", null, (m.state === "blocked" ? "✕ " : "◐ ") + capital(layerName(m.by)) + " · " + Math.round(m.at) + " km"),
+        html: el("span", null, (m.state === "blocked" ? "✕ " : "◐ ") + capital(layerName(m.by)) + " · " + fmtDist(m.at)),
         iconSize: null, iconAnchor: [6, 8] }) }).addTo(rayLayer);
     }
   }
 
   function setupLight() {
     var slider = $("light-slider");
+    setupPano();
+    $("light-pano-btn").addEventListener("click", function () {
+      light.pano = !light.pano;
+      this.setAttribute("aria-pressed", String(light.pano));
+      $("pano-wrap").hidden = !light.pano;
+      renderLight();
+    });
     $("light-section-btn").addEventListener("click", function () {
       light.section = !light.section;
       this.setAttribute("aria-pressed", String(light.section));

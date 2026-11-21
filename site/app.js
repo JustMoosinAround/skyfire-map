@@ -82,6 +82,11 @@
   function fmtHeight(m) {
     return units === "metric" ? Math.round(m).toLocaleString("en-US") + " m" : Math.round(m * 3.28084).toLocaleString("en-US") + " ft";
   }
+  function fmtRain(mm) {   // an hourly rate, with a plain word
+    var word = mm >= 7.6 ? "heavy" : mm >= 2.5 ? "moderate" : "light";
+    var rate = units === "metric" ? (mm < 10 ? mm.toFixed(1) : Math.round(mm)) + " mm/h" : (mm / 25.4).toFixed(2) + " in/h";
+    return { word: word, rate: rate };
+  }
   function distTick(km) {   // axis label for a whole number of the user's unit
     return units === "metric" ? km + " km" : Math.round(km * 0.621371) + " mi";
   }
@@ -356,7 +361,11 @@
   }
 
   function setFull(on) {
+    var was = document.body.classList.contains("full");
     document.body.classList.toggle("full", on);
+    // full screen is for the map: shrink the panel to minimal, and put it back afterwards
+    if (on && !was) { light.sizeBefore = light.size; setSize("min", true); }
+    if (!on && was && light.sizeBefore) { setSize(light.sizeBefore, true); light.sizeBefore = null; }
     var b = $("btn-full");
     b.setAttribute("aria-pressed", String(on));
     var label = b.querySelector("span");
@@ -1203,6 +1212,15 @@
     // timeline: one cell per minute, a tick at sunset/sunrise
     bar.textContent = "";
     tl.forEach(function (m) { bar.appendChild(el("i", m.state)); });
+    var rb = $("rain-bar");
+    rb.textContent = "";
+    var anyRain = false;
+    tl.forEach(function (x) {
+      var cell = el("i");
+      if (x.rain >= SkyLight.RAIN_MIN) { anyRain = true; cell.style.background = "rgba(90,170,255," + Math.min(1, 0.35 + x.rain / 4) + ")"; }
+      rb.appendChild(cell);
+    });
+    rb.hidden = !anyRain;
     var mark = el("span", "sunmark");
     mark.style.left = (100 * (light.ev.ms - tl[0].ms) / (tl[tl.length - 1].ms - tl[0].ms)) + "%";
     bar.appendChild(mark);
@@ -1210,6 +1228,10 @@
     var t = el("span", "t", timeOnly(new Date(m.ms).toISOString()));
     verdict.appendChild(t);
     verdict.appendChild(document.createTextNode(verdictText(m)));
+    if (m.rain >= SkyLight.RAIN_MIN) {
+      var rn = fmtRain(m.rain);
+      verdict.appendChild(el("span", "rain-note", " · " + rn.word + " rain at your spot (" + rn.rate + ")"));
+    }
     verdict.className = "light-verdict is-" + m.state;
     mapEl.dataset.verdict = m.state + (m.by ? ":" + m.by : "");
     // details: sunset, last light, minutes of light; where each layer meets the ray now; models
@@ -1219,6 +1241,7 @@
     info += sum.edge ? (light.rising ? "first light " : "last light ") + hm(sum.edge) + " · " + sum.minutesLit + " min of light" : "no direct light";
     if (sum.minutesGlow) info += " · " + (light.rising ? "glow from " : "afterglow until ") + hm(sum.glowEdge);
     if (sum.dark) info += " · " + (light.rising ? "dark until " : "dark at ") + hm(sum.dark);
+    info += sum.rainMinutes ? " · rain at your spot from " + hm(sum.rainFrom) + " (up to " + fmtRain(sum.rainMax).rate + ")" : " · dry at your spot";
     $("light-info").textContent = info;
     var rings = $("light-rings");
     rings.textContent = "";
@@ -1416,6 +1439,18 @@
       ctx.fillStyle = LAYER_COLOUR[Lr.id]; ctx.font = "600 10px system-ui, sans-serif"; ctx.textBaseline = "middle";
       ctx.fillText(capital(Lr.id), 2, Y((Lr.bottom + Math.min(Lr.top, SECTION_TOP_M)) / 2));
     });
+    // rain: streaks from the low cloud down to the ground where the forecast has rain along the line
+    ctx.strokeStyle = "rgba(90,170,255,0.55)"; ctx.lineWidth = 1;
+    for (var xr = Math.round(padL); xr < W - padR; xr += 4) {
+      var dr = dMin + (dMax - dMin) * (xr - padL) / (W - padL - padR);
+      var qr = SkyLight.dest(p.lat, p.lng, dr < 0 ? m.az + 180 : m.az, Math.abs(dr)), rr = f.cover(qr[0], qr[1], "rain", m.ms, light.model);
+      if (!(rr >= SkyLight.RAIN_MIN)) continue;
+      ctx.globalAlpha = Math.min(1, 0.3 + rr / 3);
+      ctx.beginPath();
+      for (var yy = Y(1800); yy < Y(0); yy += 7) { ctx.moveTo(xr, yy); ctx.lineTo(xr - 1.5, yy + 4); }
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
     // ground: terrain if we have it, else the sea
     ctx.beginPath(); ctx.moveTo(X(dMin), Y(0));
     for (var d = dMin; d <= dMax; d += Math.max(1, (dMax - dMin) / 240)) ctx.lineTo(X(d), Y(t ? t.at(m.az, d) : 0));
@@ -1505,8 +1540,40 @@
     }
   }
 
+  // ---- Panel size: minimal (one line + slider), standard, extended (everything) -------------------
+  var PANEL_KEY = "skymap.panel", SIZES = ["min", "std", "ext"], SIZE_NAMES = { min: "Minimal", std: "Standard", ext: "Extended" };
+  function setSize(size, keep) {
+    if (SIZES.indexOf(size) < 0) size = "std";
+    var box = $("light");
+    SIZES.forEach(function (sz) { if (box.classList) box.classList.toggle("size-" + sz, sz === size); });
+    $("light-size-label").textContent = SIZE_NAMES[size];
+    $("light-more").setAttribute("aria-expanded", String(size === "ext"));
+    $("light-more").textContent = size === "ext" ? "Less" : "Details";
+    $("light-details").hidden = size !== "ext";
+    if (!keep) store.set(PANEL_KEY, size);
+    light.size = size;
+    if (map) setTimeout(function () { map.invalidateSize({ animate: false }); if (light.state === "ready") renderLight(); }, 30);
+  }
+  function setupSize() {
+    var h = $("light-size"), startY = null;
+    setSize(store.get(PANEL_KEY) || "std");
+    h.addEventListener("click", function () { setSize(SIZES[(SIZES.indexOf(light.size) + 1) % 3]); });
+    h.addEventListener("pointerdown", function (e) { startY = e.clientY; try { h.setPointerCapture(e.pointerId); } catch (x) { /* ignore */ } });
+    h.addEventListener("pointerup", function (e) {   // swipe up = bigger, down = smaller
+      if (startY === null) return;
+      var dy = e.clientY - startY, i = SIZES.indexOf(light.size);
+      startY = null;
+      if (Math.abs(dy) < 20) return;
+      e.preventDefault();
+      setSize(SIZES[Math.max(0, Math.min(2, i + (dy < 0 ? 1 : -1)))]);
+      h.dataset.swiped = "1";
+    });
+    h.addEventListener("click", function (e) { if (h.dataset.swiped) { delete h.dataset.swiped; e.stopImmediatePropagation(); } }, true);
+  }
+
   function setupLight() {
     var slider = $("light-slider");
+    setupSize();
     setupPano();
     $("light-pano-btn").addEventListener("click", function () {
       light.pano = !light.pano;
@@ -1521,11 +1588,6 @@
       renderLight();
     });
     slider.addEventListener("input", function () { light.idx = +slider.value; renderLight(); });
-    $("light-more").addEventListener("click", function () {
-      var open = this.getAttribute("aria-expanded") !== "true";
-      this.setAttribute("aria-expanded", String(open));
-      this.textContent = open ? "Less" : "Details";
-      $("light-details").hidden = !open;
-    });
+    $("light-more").addEventListener("click", function () { setSize(light.size === "ext" ? "std" : "ext"); });
   }
 })();

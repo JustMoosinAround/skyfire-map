@@ -238,6 +238,7 @@ main {
 .light-verdict .t { font-variant-numeric: tabular-nums; color: var(--muted); font-weight: 500; margin-right: 6px; }
 .light-verdict.is-clear { color: #ffb366; }
 .light-verdict.is-afterglow { color: #ff7fae; }
+.rain-note { color: #8cc4ff; font-weight: 500; }
 .light-verdict.is-blocked { color: var(--text); }
 .light-more { flex: none; appearance: none; border: 1px solid var(--line); border-radius: 999px; background: none; color: var(--muted); font-size: 0.75rem; padding: 3px 10px; cursor: pointer; }
 .light-more:focus-visible, .light-slider:focus-visible, .model:focus-visible { outline: 2px solid var(--fire); outline-offset: 2px; }
@@ -252,6 +253,16 @@ main {
 .light-bar i.twilight { background: #4a4380; }
 .light-bar i.dark { background: #0d121c; }
 .light-bar i.unknown { background: repeating-linear-gradient(45deg, #263244 0 3px, #182234 3px 6px); }
+.rain-bar { display: flex; height: 4px; margin: 2px 0 2px; border-radius: 2px; overflow: hidden; background: transparent; }
+.rain-bar i { flex: 1; min-width: 0; }
+.light-size { display: flex; align-items: center; gap: 8px; width: 100%; margin: -4px 0 6px; padding: 2px 0; appearance: none; border: 0; background: none; color: var(--muted); font-size: 0.7rem; letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer; touch-action: none; }
+.light-size .grip { width: 36px; height: 4px; border-radius: 2px; background: var(--line); }
+.light-size:focus-visible { outline: 2px solid var(--fire); outline-offset: 2px; }
+/* Minimal: one line and the slider; Standard: + timeline and views; Extended: everything */
+.light.size-min .light-bar, .light.size-min .rain-bar, .light.size-min .light-head .light-more,
+.light.size-min .section-wrap, .light.size-min .light-details { display: none !important; }
+.light.size-min .light-verdict { font-size: 0.9rem; }
+.light.size-ext .light-details { display: block !important; }
 .light-bar .sunmark { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--sun); }
 .light-slider { width: 100%; margin: 0; accent-color: var(--fire); }
 .light-details p { margin: 6px 0 0; font-size: 0.8125rem; color: var(--muted); }

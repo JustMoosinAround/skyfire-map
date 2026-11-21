@@ -11,7 +11,7 @@
 <link rel="icon" href="icons/favicon-32.png" sizes="32x32">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
-<link rel="stylesheet" href="style.css?v=12">
+<link rel="stylesheet" href="style.css?v=13">
 </head>
 <body>
 <header class="site-header">
@@ -44,7 +44,9 @@
     </div>
     <p id="map-note" class="map-note" hidden></p>
   </div>
-  <section id="light" class="light" aria-label="Light check" hidden>
+  <section id="light" class="light size-std" aria-label="Light check" hidden>
+    <button id="light-size" class="light-size" type="button" title="Panel size: tap to change">
+      <span class="grip" aria-hidden="true"></span><span id="light-size-label">Standard</span></button>
     <div class="light-head">
       <p id="light-verdict" class="light-verdict" aria-live="polite"></p>
       <button id="light-pano-btn" class="light-more" type="button" aria-pressed="false">Panorama</button>
@@ -52,6 +54,7 @@
       <button id="light-more" class="light-more" type="button" aria-expanded="false">Details</button>
     </div>
     <div id="light-bar" class="light-bar" aria-hidden="true"></div>
+    <div id="rain-bar" class="rain-bar" aria-hidden="true" title="Rain at your spot"></div>
     <input id="light-slider" class="light-slider" type="range" min="0" max="0" value="0" aria-label="Time">
     <figure id="pano-wrap" class="section-wrap" hidden>
       <div class="pano-box">
@@ -92,8 +95,8 @@
 </footer>
 
 <script src="vendor/leaflet/leaflet.js"></script>
-<script src="lightcheck.js?v=12"></script>
-<script src="panorama.js?v=12"></script>
-<script src="app.js?v=12"></script>
+<script src="lightcheck.js?v=13"></script>
+<script src="panorama.js?v=13"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>

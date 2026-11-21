@@ -154,7 +154,7 @@
     var urls = batches.map(function (b) {
       return API + "?latitude=" + b.map(function (p) { return p[0]; }).join(",") +
         "&longitude=" + b.map(function (p) { return p[1]; }).join(",") +
-        "&hourly=cloud_cover_low,cloud_cover_mid,cloud_cover_high&models=" + MODELS.join(",") +
+        "&hourly=cloud_cover_low,cloud_cover_mid,cloud_cover_high,precipitation&models=" + MODELS.join(",") +
         "&start_date=" + day + "&end_date=" + next + "&timezone=GMT";
     });
     return inSequence(urls, fetchFn).then(function (parts) {
@@ -174,7 +174,11 @@
     var times = h.time.map(function (t) { return Date.parse(t + "Z"); }), models = {};
     MODELS.forEach(function (m) {
       var cols = ["low", "mid", "high"].map(function (l) { return h["cloud_cover_" + l + "_" + m]; });
-      if (cols.every(Array.isArray)) models[m] = { low: cols[0], mid: cols[1], high: cols[2] };
+      if (cols.every(Array.isArray)) {
+        models[m] = { low: cols[0], mid: cols[1], high: cols[2] };
+        var rain = h["precipitation_" + m];
+        if (Array.isArray(rain)) models[m].rain = rain;   // mm in the hour
+      }
     });
     this.nodes[lat.toFixed(2) + "," + lon.toFixed(2)] = { times: times, models: models };
   };
@@ -276,7 +280,8 @@
   // One minute: follow the ray through each layer; the nearest stretch with a thick bank blocks the light.
   function minute(forecast, lat, lon, ms, model, eyeM, terrain) {
     var s = sunPos(ms, lat, lon), alt = apparent(s.alt);
-    var out = { ms: ms, az: s.az, alt: alt, stretches: [], state: "clear", by: null, at: null, cover: 0, hills: null };
+    var out = { ms: ms, az: s.az, alt: alt, stretches: [], state: "clear", by: null, at: null, cover: 0, hills: null,
+                rain: Math.max(0, forecast.cover(lat, lon, "rain", ms, model)) };   // mm/h at your spot
     // Below the horizon: without terrain, the sea-level horizon; with it, where the ray meets the sea.
     if (alt < (terrain ? -0.3 - dip(eyeM) : -0.3)) return twilight(out, forecast, lat, lon, ms, model, eyeM);
     out.hills = hillsBlock(terrain, s.az, alt, eyeM);
@@ -309,7 +314,8 @@
   // toward the sun: at depression δ (radians), a place x km toward the sun sees the sun at δ - x/R, so it
   // is in shadow below about R·(1/cos(δ - x/R) - 1). A cloud we can see (above our horizon) whose top
   // reaches above the shadow is lit: the afterglow.
-  var DARK_ALT = -12;      // nautical dusk/dawn: dark enough that cloud colour is over
+  var DARK_ALT = -12;
+  var RAIN_MIN = 0.1;      // mm/h: anything less is called dry      // nautical dusk/dawn: dark enough that cloud colour is over
   var LIT_COVER = 40;      // a layer needs at least this much cloud to make an afterglow
   function shadowHeight(xKm, depDeg) {
     var dx = depDeg * RAD - xKm / R_KM;
@@ -363,17 +369,19 @@
     var key = lit.length ? (rising ? lit[0] : lit[lit.length - 1]) : null;
     var glow = tl.filter(function (x) { return x.state === "afterglow"; });
     var dark = tl.filter(function (x) { return x.state === "dark"; });
+    var wet = tl.filter(function (x) { return x.rain >= RAIN_MIN; });
     return { minutesLit: lit.length, minutesClear: tl.filter(function (x) { return x.state === "clear"; }).length,
              edge: key ? key.ms : null, minutesGlow: glow.length,
              glowEdge: glow.length ? (rising ? glow[0].ms : glow[glow.length - 1].ms) : null,
-             dark: dark.length ? (rising ? dark[dark.length - 1].ms : dark[0].ms) : null };
+             dark: dark.length ? (rising ? dark[dark.length - 1].ms : dark[0].ms) : null,
+             rainMinutes: wet.length, rainFrom: wet.length ? wet[0].ms : null, rainMax: wet.reduce(function (a, x) { return Math.max(a, x.rain); }, 0) };
   }
 
   var api = { LAYERS: LAYERS, MODELS: MODELS, MODEL_NAMES: MODEL_NAMES, MAX_KM: MAX_KM, BLOCK: BLOCK, PARTIAL: PARTIAL,
     sunPos: sunPos, apparent: apparent, sunEvent: sunEvent, dest: dest, rayHeight: rayHeight, distanceAt: distanceAt,
     layerStretches: layerStretches, nodesFor: nodesFor, fetchForecast: fetchForecast, Forecast: Forecast,
     fetchProfiles: fetchProfiles, BEHIND_KM: BEHIND_KM, Terrain: Terrain, hillsBlock: hillsBlock, PROFILE_STEP_KM: PROFILE_STEP_KM,
-    minute: minute, windowFor: windowFor, shadowHeight: shadowHeight, DARK_ALT: DARK_ALT, timeline: timeline, summary: summary };
+    minute: minute, windowFor: windowFor, shadowHeight: shadowHeight, DARK_ALT: DARK_ALT, RAIN_MIN: RAIN_MIN, timeline: timeline, summary: summary };
   root.SkyLight = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

@@ -45,9 +45,22 @@
     </div>
   </div>
 
+  <!-- Android: the app file -->
+  <section class="card" id="android-app" hidden>
+    <h2>Get the Android app</h2>
+    <p style="margin:0 0 10px">SkyFire as a full app on your phone, free and not from the Play Store.</p>
+    <div class="row" style="margin-top:0"><a class="btn" id="apk" href="https://github.com/JustMoosinAround/skyfire-map/releases/latest/download/skyfire.apk">Download SkyFire for Android</a></div>
+    <ol style="margin-top:12px">
+      <li>Tap <b>Download</b>, then open <b>skyfire.apk</b> when it finishes.</li>
+      <li>If Android asks, allow your browser to <b>install unknown apps</b> (Settings → this browser → Allow).</li>
+      <li>Tap <b>Install</b>. SkyFire appears with your other apps.</li>
+    </ol>
+    <p class="muted" style="margin:10px 0 0">Updates to the map and forecasts arrive automatically. Prefer not to install a file? Use the option below instead.</p>
+  </section>
+
   <!-- Android (Chrome) -->
   <section class="card" id="android" hidden>
-    <h2>Install on Android</h2>
+    <h2>Or add it from Chrome</h2>
     <p id="android-ready" hidden>Tap the button and confirm. SkyFire gets its own icon on your home screen.</p>
     <ol id="android-steps">
       <li>Open this page in <b>Chrome</b>.</li>
@@ -73,7 +86,8 @@
       <img src="icons/install-qr.svg" alt="QR code for this page">
       <p class="muted">Scan this with your phone's camera to open this page there, then follow the steps for Android or iPhone.</p>
     </div>
-    <p class="muted" style="margin-top:12px">On a computer, Chrome and Edge can install it too: look for the install icon at the right of the address bar.</p>
+    <p class="muted" style="margin-top:12px">On a computer, Chrome and Edge can install it too: look for the install icon at the right of the address bar.
+      Android users can also <a href="https://github.com/JustMoosinAround/skyfire-map/releases/latest/download/skyfire.apk" style="color:inherit">download the Android app</a>.</p>
   </section>
 
   <div class="row">
@@ -108,6 +122,7 @@
   var android = /Android/i.test(ua);
   var standalone = window.matchMedia && window.matchMedia("(display-mode: standalone)").matches;
   document.getElementById(ios ? "ios" : android ? "android" : "desktop").hidden = false;
+  if (android && !/SkyFireApp/.test(ua)) document.getElementById("android-app").hidden = false;
   if (standalone) { location.replace("./"); return; }
   if ("serviceWorker" in navigator && window.isSecureContext) navigator.serviceWorker.register("sw.js").catch(function () {});
   var prompt = null, btn = document.getElementById("install");

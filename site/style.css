@@ -316,7 +316,7 @@ main {
 
 /* ---- Full screen: the map fills the whole screen (or the whole frame) ------- */
 body.full { height: 100vh; height: 100dvh; overflow: hidden; }
-body.full .site-header, body.full .site-footer, body.full .stale { display: none; }
+body.full .site-header, body.full .site-footer, body.full .stale, body.full .moon-card { display: none; }
 body.full main { padding-top: max(8px, env(safe-area-inset-top, 0px)); }
 body.full .map-wrap { min-height: 0; border-radius: 0; border-left: 0; border-right: 0; }
 
@@ -347,3 +347,13 @@ body.full .map-wrap { min-height: 0; border-radius: 0; border-left: 0; border-ri
 .light.pano-full .pano-box { flex: 1; min-height: 0; }
 .light.pano-full .pano { height: 100%; }
 body.pano-open { overflow: hidden; }
+
+/* ---- Moon card ---------------------------------------------------------------- */
+.moon-card { display: flex; gap: 12px; align-items: flex-start; margin-top: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--chip); }
+.moon-icon { flex: none; width: 52px; height: 52px; }
+.moon-text { min-width: 0; }
+.moon-text p { margin: 0; }
+.moon-name { font-weight: 700; }
+.moon-line { color: var(--muted); font-size: 0.8125rem; margin-top: 2px !important; }
+.moon-line b { color: var(--text); font-weight: 600; }
+.moon-note { color: var(--muted); font-size: 0.75rem; margin-top: 4px !important; }

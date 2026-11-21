@@ -161,6 +161,18 @@
       });
       ctx.stroke(); ctx.setLineDash([]);
     }
+    // the moon's path for the day (dotted, cool white)
+    if (o.moonPath && o.moonPath.length) {
+      ctx.strokeStyle = "rgba(200,214,236,0.5)"; ctx.setLineDash([2, 4]); ctx.lineWidth = 1.1; ctx.beginPath();
+      var mStarted = false, mLastX = null;
+      o.moonPath.forEach(function (s2) {
+        var x = X(s2.az), y = Y(s2.alt);
+        if (!inView(s2.az) || (mLastX !== null && Math.abs(x - mLastX) > W / 2)) { mStarted = false; mLastX = null; return; }
+        if (!mStarted) { ctx.moveTo(x, y); mStarted = true; } else ctx.lineTo(x, y);
+        mLastX = x;
+      });
+      ctx.stroke(); ctx.setLineDash([]);
+    }
     // terrain: silhouette fill, then crests far to near (lighter = further)
     ctx.beginPath(); ctx.moveTo(0, H);
     for (var px = 0; px <= W; px += 1) {
@@ -211,6 +223,14 @@
       ctx.fillStyle = "#ffd27a"; ctx.beginPath(); ctx.arc(sx, sy, 6, 0, 2 * Math.PI); ctx.fill();
       ctx.globalAlpha = 1;
     }
+    // the moon now, with its phase; the bright side faces the sun
+    if (o.moon && inView(o.moon.az)) {
+      var mx = X(o.moon.az), my = Y(o.moon.alt), mHidden = o.moon.alt < rayAt(o.sky, o.moon.az).max;
+      var toward = o.sun ? Math.atan2(Y(o.sun.alt) - my, X(o.sun.az) - mx) : 0;
+      ctx.globalAlpha = mHidden ? 0.35 : 1;
+      moonDisk(ctx, mx, my, 6.5, o.moon.fraction, toward);
+      ctx.globalAlpha = 1;
+    }
     // peak labels, highest-looking first, skipping ones that would overlap
     var placed = [];
     ctx.font = "600 10px system-ui, sans-serif"; ctx.textBaseline = "middle";
@@ -242,7 +262,21 @@
     return { placed: placed.length, glow: glow.length, exag: ex };
   }
 
-  var api = { Grid: Grid, loadGrid: loadGrid, skyline: skyline, rayAt: rayAt, visiblePeaks: visiblePeaks, angle: angle,
+  // A moon disk: dark body, lit part toward `angle` (radians, screen), `fraction` lit (0-1).
+  function moonDisk(ctx, x, y, r, fraction, angle) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(angle);
+    ctx.fillStyle = "#2b3242"; ctx.beginPath(); ctx.arc(0, 0, r, 0, 2 * Math.PI); ctx.fill();
+    var rx = r * Math.abs(2 * fraction - 1);
+    ctx.fillStyle = "#f2efe2"; ctx.beginPath();
+    ctx.arc(0, 0, r, -Math.PI / 2, Math.PI / 2, false);                       // the lit half, toward the sun
+    if (fraction >= 0.5) ctx.ellipse(0, 0, Math.max(0.01, rx), r, 0, Math.PI / 2, 3 * Math.PI / 2, false);   // gibbous: bulge
+    else ctx.ellipse(0, 0, Math.max(0.01, rx), r, 0, Math.PI / 2, -Math.PI / 2, true);                     // crescent: bite
+    ctx.fill();
+    ctx.strokeStyle = "rgba(242,239,226,0.5)"; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.arc(0, 0, r, 0, 2 * Math.PI); ctx.stroke();
+    ctx.restore();
+  }
+
+  var api = { moonDisk: moonDisk, Grid: Grid, loadGrid: loadGrid, skyline: skyline, rayAt: rayAt, visiblePeaks: visiblePeaks, angle: angle,
     bearingKm: bearingKm, draw: draw, MAX_KM: MAX_KM };
   root.SkyPano = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;

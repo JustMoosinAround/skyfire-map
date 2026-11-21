@@ -539,6 +539,69 @@
     $("map").dataset.space = [kp ? "kp" : "", mag ? "bz" : "", wind ? "wind" : ""].join(",");
   }
 
+  // ---- The moon card: phase, where it is at the tab's time, rise/set, next phases ---------------
+  var moonCache = { phases: null, phasesAt: 0 };
+  function akOffsetMs(ms) {   // Alaska's UTC offset at that moment (AKST -9 h, AKDT -8 h)
+    var name = new Intl.DateTimeFormat("en-US", { timeZone: ZONE, timeZoneName: "shortOffset" }).formatToParts(new Date(ms))
+      .filter(function (x) { return x.type === "timeZoneName"; })[0];
+    var m = name && /GMT([+-]\d+)/.exec(name.value);
+    return (m ? +m[1] : -9) * 3600e3;
+  }
+  function akMidnight(ms) {   // 00:00 Alaska time on that day, as UTC ms
+    var off = akOffsetMs(ms), local = new Date(ms + off);
+    return Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate()) - off;
+  }
+  function drawMoonIcon(fraction, waxing) {
+    var cv = $("moon-icon");
+    if (!cv.getContext) return;
+    var ctx = cv.getContext("2d");
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    // northern hemisphere: the lit side is on the right while waxing, left while waning
+    SkyPano.moonDisk(ctx, cv.width / 2, cv.height / 2, cv.width / 2 - 3, fraction, waxing ? 0 : Math.PI);
+  }
+  function renderMoon() {
+    if (!window.SkyMoon) return;
+    var box = $("moon"), tab = current;
+    var at = tab ? Date.parse((tab.data && tab.data.when) || tab.when) : Date.now();
+    if (tab && tab.data && tab.data.map_type === "denali" && tab.data.hours) at = Date.parse(tab.data.hours[denaliHour] || tab.when);
+    var p = pin ? pin.getLatLng() : { lat: HOME[0], lng: HOME[1] };
+    var il = SkyMoon.illumination(at), pos = SkyMoon.position(at, p.lat, p.lng);
+    drawMoonIcon(il.fraction, il.waxing);
+    $("moon-name").textContent = SkyMoon.phaseName(il.phase) + " · " + Math.round(il.fraction * 100) + "% lit";
+    var when = tab ? tab.label + " " + weekdayTime(new Date(at).toISOString()) : "Now";
+    var atLine = $("moon-at");
+    atLine.textContent = "";
+    atLine.appendChild(el("b", null, when + ": "));
+    atLine.appendChild(document.createTextNode(pos.alt > 0
+      ? Math.round(pos.alt) + "° up in the " + compassName(pos.az) + " (" + Math.round(pos.az) + "°)"
+      : "below the horizon"));
+    var day0 = akMidnight(at), rs = SkyMoon.riseSet(p.lat, p.lng, day0, day0 + 86400000);
+    var rsText = rs.alwaysUp ? "Up all day" : rs.alwaysDown ? "Doesn't rise this day" :
+      [rs.rise ? "Rises " + timeOnly(new Date(rs.rise).toISOString()) : "No moonrise", rs.set ? "sets " + timeOnly(new Date(rs.set).toISOString()) : "no moonset"].join(" · ");
+    $("moon-rs").textContent = weekdayTime(new Date(day0 + 12 * 3600e3).toISOString()).split(" ")[0] + ": " + rsText;
+    if (!moonCache.phases || Math.abs(Date.now() - moonCache.phasesAt) > 3600e3) {
+      moonCache.phases = SkyMoon.nextPhases(Date.now(), 4);
+      moonCache.phasesAt = Date.now();
+    }
+    var next = $("moon-next");
+    next.textContent = "";
+    moonCache.phases.forEach(function (ph, i) {
+      var d = parts(new Date(ph.ms).toISOString());
+      next.appendChild(el("b", null, ph.name));
+      next.appendChild(document.createTextNode(" " + d.weekday + " " + d.month + " " + d.day + (i < moonCache.phases.length - 1 ? " · " : "")));
+    });
+    var note = "";
+    if (tab && tab.data && /aurora|meteor/.test(tab.data.map_type)) {
+      note = il.fraction > 0.6 && pos.alt > 0 ? "A bright moon is up: it washes out faint aurora and meteors; strong displays still show."
+        : il.fraction > 0.6 ? "Bright moon, but below the horizon at this time: a darker sky." : "A thin or absent moon: a dark sky for faint aurora and meteors.";
+    } else if (tab && tab.data && tab.data.map_type === "sky") {
+      note = pos.alt > 0 && pos.alt < 15 ? "Low moon in the " + compassName(pos.az) + ": a chance to frame it with the sunset or sunrise colour." : "";
+    }
+    $("moon-note").textContent = note;
+    box.hidden = false;
+    $("map").dataset.moon = Math.round(il.fraction * 100) + "@" + Math.round(pos.alt);
+  }
+
   function setHow(mapType) {
     spaceShow(mapType === "aurora");
     var how = document.querySelector(".site-footer .how");
@@ -548,6 +611,7 @@
   function drawTab(tab, file) {
     current.data = file;
     setHow(file.map_type);
+    setTimeout(renderMoon, 0);
     if (file.map_type === "denali") { drawDenaliTab(tab, file); return; }
     $("hours").hidden = true;
     if (!file.grid) file.grid = buildGrid(file.dots);
@@ -706,6 +770,7 @@
     store.set(PIN_KEY, JSON.stringify([ll.lat, ll.lng]));
     light.key = null;
     drawSun();
+    renderMoon();
   }
 
   function onTap(e) {
@@ -913,6 +978,7 @@
       b.appendChild(document.createTextNode(h.time));
       b.addEventListener("click", function () {
         denaliHour = i;
+        setTimeout(renderMoon, 0);
         Array.prototype.forEach.call(box.children, function (x, j) { x.setAttribute("aria-pressed", String(j === i)); });
         drawDenaliField(file);
         drawSun();
@@ -1309,8 +1375,18 @@
       var s = SkyLight.sunPos(t, p.lat, p.lng);
       path.push({ az: s.az, alt: SkyLight.apparent(s.alt) });
     }
+    var moonPath = [], moonNow = null;
+    if (window.SkyMoon) {
+      for (var tm = light.ev.ms - 12 * 3600e3; tm <= light.ev.ms + 12 * 3600e3; tm += 5 * 60000) {
+        var mp = SkyMoon.position(tm, p.lat, p.lng);
+        moonPath.push({ az: mp.az, alt: mp.alt });
+      }
+      var mn = SkyMoon.position(m.ms, p.lat, p.lng), mi = SkyMoon.illumination(m.ms);
+      moonNow = { az: mn.az, alt: mn.alt, fraction: mi.fraction };
+    }
     var f = light.forecast;
     var drawn = SkyPano.draw(cv, {
+      moonPath: moonPath, moon: moonNow,
       sky: pano.sky, peaks: pano.vis, centerAz: pano.center, fov: pano.fov, exag: pano.exag,
       sunPath: path, sun: { az: m.az, alt: m.alt },
       clouds: function (az, km, layer) { var q = SkyLight.dest(p.lat, p.lng, az, km); return f.cover(q[0], q[1], layer, m.ms, light.model); },
@@ -1319,6 +1395,7 @@
     });
     var inGrid = pano.grid.at(p.lat, p.lng) !== null, glowN = drawn ? drawn.glow : 0;
     cv.dataset.glow = String(glowN);
+    cv.dataset.moon = moonNow ? Math.round(moonNow.az) + "," + Math.round(moonNow.alt) : "";
     cap.textContent = "From the pin, facing " + Math.round(pano.center) + "° " + compassName(pano.center) + ". " +
       (compass.on ? "Compass on: turn with your phone (🧭 to stop). " : "Drag to look around; ☀ faces the sun; 🧭 follows your phone. ") +
       "Heights are stretched " + (drawn ? Math.round(drawn.exag * 10) / 10 : pano.exag) + "×. " + (glowN ? "Warm ridges are still in sunlight (alpenglow). " : "") +

@@ -11,7 +11,7 @@
 <link rel="icon" href="icons/favicon-32.png" sizes="32x32">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
-<link rel="stylesheet" href="style.css?v=15">
+<link rel="stylesheet" href="style.css?v=16">
 </head>
 <body>
 <header class="site-header">
@@ -84,6 +84,16 @@
     <p class="space-fc" id="space-fc"></p>
     <p class="space-note" id="space-note"></p>
   </section>
+  <section id="moon" class="moon-card" aria-label="The moon" hidden>
+    <canvas id="moon-icon" class="moon-icon" width="64" height="64" role="img" aria-label="Moon phase"></canvas>
+    <div class="moon-text">
+      <p id="moon-name" class="moon-name"></p>
+      <p id="moon-at" class="moon-line"></p>
+      <p id="moon-rs" class="moon-line"></p>
+      <p id="moon-next" class="moon-line"></p>
+      <p id="moon-note" class="moon-note"></p>
+    </div>
+  </section>
   <section id="legend" class="legend" aria-label="Colour key" hidden>
     <div id="key-bar" class="key-bar"></div>
     <div id="key-ticks" class="key-ticks"></div>
@@ -96,8 +106,9 @@
 </footer>
 
 <script src="vendor/leaflet/leaflet.js"></script>
-<script src="lightcheck.js?v=15"></script>
-<script src="panorama.js?v=15"></script>
-<script src="app.js?v=15"></script>
+<script src="lightcheck.js?v=16"></script>
+<script src="panorama.js?v=16"></script>
+<script src="moon.js?v=16"></script>
+<script src="app.js?v=16"></script>
 </body>
 </html>

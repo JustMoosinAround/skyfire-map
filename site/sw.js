@@ -4,8 +4,8 @@
  * Forecast data is network-first, falling back to the last copy, so the last map opens with no signal.
  * Never cached: grid.json (12 MB, only for the alert runner), map tiles (OpenStreetMap's policy) and the
  * per-spot forecast the light check downloads from Open-Meteo (another site; fetched fresh). */
-var VERSION = "skyfire-v15";
-var SHELL = ["./", "index.html", "install.html", "lightcheck.js", "panorama.js", "app.js", "style.css", "manifest.webmanifest", "logo.png",
+var VERSION = "skyfire-v16";
+var SHELL = ["./", "index.html", "install.html", "lightcheck.js", "panorama.js", "moon.js", "app.js", "style.css", "manifest.webmanifest", "logo.png",
   "vendor/leaflet/leaflet.css", "vendor/leaflet/leaflet.js",
   "assets/basemap.json", "assets/hillshade.png", "assets/denali_los.json", "assets/terrain.json", "assets/terrain.bin", "assets/peaks.json",
   "icons/install-qr.svg", "icons/icon-192.png", "icons/icon-512.png", "icons/maskable-512.png", "icons/favicon-32.png"];

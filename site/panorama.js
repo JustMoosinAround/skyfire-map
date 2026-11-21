@@ -69,7 +69,7 @@
         var a = angle(h, d, eyeM);
         if (a > best) {
           best = a;
-          prev = { km: d, ang: a };
+          prev = { km: d, ang: a, h: h, lat: p[0], lon: p[1] };
         } else if (prev) {
           crests.push(prev);   // the last visible point before the terrain dropped away: a crest
           prev = null;
@@ -119,6 +119,10 @@
     var ctx = canvas.getContext("2d");
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     var pxDeg = W / o.fov, base = H * 0.8, ex = o.exag;
+    // stretch heights up to o.exag, but never so much that the skyline in view rises past ~2/3 of the height
+    var topAng = 0.3;
+    for (var sx0 = 0; sx0 <= W; sx0 += 4) topAng = Math.max(topAng, rayAt(o.sky, o.centerAz + (sx0 - W / 2) / pxDeg).max);
+    ex = Math.max(1, Math.min(o.exag, (base * 0.8) / (topAng * pxDeg)));
     var X = function (az) { var d = ((az - o.centerAz + 540) % 360) - 180; return W / 2 + d * pxDeg; };
     var Y = function (ang) { return base - ang * pxDeg * ex; };
     var inView = function (az) { var d = Math.abs(((az - o.centerAz + 540) % 360) - 180); return d <= o.fov / 2 + 1; };
@@ -168,7 +172,7 @@
     // brighter and thicker when near, fainter when far, as in PeakFinder
     var step = Math.max(2, Math.round(AZ_STEP * pxDeg)), prev = null;
     var BUCKETS = [[15, "rgba(236,241,248,0.95)", 1.6], [50, "rgba(198,210,228,0.85)", 1.3], [120, "rgba(150,166,192,0.75)", 1.1], [1e9, "rgba(112,128,156,0.65)", 1]];
-    var segs = BUCKETS.map(function () { return []; });
+    var segs = BUCKETS.map(function () { return []; }), glow = [];   // glow: sunlit crests (alpenglow)
     for (var px2 = 0; px2 <= W + step; px2 += step) {
       var r2 = rayAt(o.sky, o.centerAz + (px2 - W / 2) / pxDeg), cur = [];
       r2.crests.forEach(function (cr) {
@@ -178,7 +182,9 @@
         var best = null, bd = Infinity;
         prev.forEach(function (q) { var dd = Math.abs(q.km - cr.km); if (dd < bd) { bd = dd; best = q; } });
         if (best && bd <= Math.max(1.5, cr.km * 0.12)) {
-          for (var b = 0; b < BUCKETS.length; b++) if (cr.km <= BUCKETS[b][0]) { segs[b].push([best, pt]); break; }
+          var tint = o.lit ? o.lit(cr, r2.az) : null;
+          if (tint) glow.push([best, pt, tint, cr.km]);
+          else for (var b = 0; b < BUCKETS.length; b++) if (cr.km <= BUCKETS[b][0]) { segs[b].push([best, pt]); break; }
         }
       });
       prev = cur;
@@ -188,6 +194,16 @@
       segs[bi].forEach(function (sg) { ctx.moveTo(sg[0].x, sg[0].y); ctx.lineTo(sg[1].x, sg[1].y); });
       ctx.stroke();
     }
+    // alpenglow: sunlit ridges in warm colour, with a soft wash on the slope below each crest
+    glow.sort(function (a, b) { return b[3] - a[3]; }).forEach(function (sg) {
+      var c = sg[2], x0 = sg[0].x, x1 = sg[1].x, y = Math.min(sg[0].y, sg[1].y);
+      var wash = ctx.createLinearGradient(0, y, 0, y + 14);
+      wash.addColorStop(0, "rgba(" + c.r + "," + c.g + "," + c.b + "," + (0.45 * c.a) + ")");
+      wash.addColorStop(1, "rgba(" + c.r + "," + c.g + "," + c.b + ",0)");
+      ctx.fillStyle = wash; ctx.fillRect(Math.min(x0, x1), y, Math.abs(x1 - x0) + 1, 14);
+      ctx.strokeStyle = "rgba(" + c.r + "," + c.g + "," + c.b + "," + c.a + ")"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(x0, sg[0].y); ctx.lineTo(x1, sg[1].y); ctx.stroke();
+    });
     // the sun now (dimmed when it is behind terrain or below the horizon)
     if (o.sun && inView(o.sun.az)) {
       var sx = X(o.sun.az), sy = Y(o.sun.alt), hidden = o.sun.alt < rayAt(o.sky, o.sun.az).max;
@@ -223,7 +239,7 @@
       if (d % 45 === 0) ctx.fillText(names[d / 45], xx, H - 2);
     }
     ctx.textAlign = "left";
-    return { placed: placed.length };
+    return { placed: placed.length, glow: glow.length, exag: ex };
   }
 
   var api = { Grid: Grid, loadGrid: loadGrid, skyline: skyline, rayAt: rayAt, visiblePeaks: visiblePeaks, angle: angle,

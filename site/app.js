@@ -1310,16 +1310,19 @@
       path.push({ az: s.az, alt: SkyLight.apparent(s.alt) });
     }
     var f = light.forecast;
-    SkyPano.draw(cv, {
+    var drawn = SkyPano.draw(cv, {
       sky: pano.sky, peaks: pano.vis, centerAz: pano.center, fov: pano.fov, exag: pano.exag,
       sunPath: path, sun: { az: m.az, alt: m.alt },
       clouds: function (az, km, layer) { var q = SkyLight.dest(p.lat, p.lng, az, km); return f.cover(q[0], q[1], layer, m.ms, light.model); },
       layers: SkyLight.LAYERS, shadow: SkyLight.shadowHeight, fmtHeight: fmtHeight, fmtDist: fmtDist,
+      lit: function (cr, az) { return alpenglow(cr, az, m, f); },
     });
-    var inGrid = pano.grid.at(p.lat, p.lng) !== null;
+    var inGrid = pano.grid.at(p.lat, p.lng) !== null, glowN = drawn ? drawn.glow : 0;
+    cv.dataset.glow = String(glowN);
     cap.textContent = "From the pin, facing " + Math.round(pano.center) + "° " + compassName(pano.center) + ". " +
       (compass.on ? "Compass on: turn with your phone (🧭 to stop). " : "Drag to look around; ☀ faces the sun; 🧭 follows your phone. ") +
-      "Heights are stretched " + pano.exag + "×. " + (inGrid ? "" : "Terrain covers South-central Alaska only. ") +
+      "Heights are stretched " + (drawn ? Math.round(drawn.exag * 10) / 10 : pano.exag) + "×. " + (glowN ? "Warm ridges are still in sunlight (alpenglow). " : "") +
+      (inGrid ? "" : "Terrain covers South-central Alaska only. ") +
       "Peak names © OpenStreetMap contributors.";
     cv.dataset.drawn = String(m.ms);
     cv.dataset.peaks = String(pano.vis.length);
@@ -1388,12 +1391,61 @@
     } else setCompass(true);
   }
 
+  // Alpenglow on a visible crest: is it still in sunlight, and what colour is the light?
+  // Sun up and low (< 8°): gold to orange. Sun down: the crest is lit while it stands above the Earth's
+  // shadow there (lower toward the sun, higher away from it); pink, fading as the shadow reaches it.
+  // A crest sitting in thick forecast cloud stays grey.
+  var GLOW_MAX_ALT = 8;
+  function alpenglow(cr, az, m, f) {
+    var alt = m.alt;
+    if (alt > GLOW_MAX_ALT || alt < -8 || cr.h < 300) return null;
+    var toward = cr.km * Math.cos((az - m.az) * RAD);          // the crest's distance toward the sun
+    var c, a;
+    if (alt >= 0) {
+      var t = alt / GLOW_MAX_ALT;                              // 1 = higher sun, 0 = at the horizon
+      c = { r: 255, g: Math.round(150 + 60 * t), b: Math.round(80 + 40 * t) };
+      a = 0.55 + 0.4 * (1 - t);
+    } else {
+      var shadow = SkyLight.shadowHeight(toward, -alt);
+      if (cr.h <= shadow) return null;                          // the Earth's shadow has reached it
+      var above = Math.min(1, (cr.h - shadow) / 1500);
+      c = { r: 255, g: Math.round(95 + 40 * above), b: Math.round(140 - 10 * above) };
+      a = 0.35 + 0.6 * above;
+    }
+    if (f && cr.lat != null) {
+      var low = f.cover(cr.lat, cr.lon, "low", m.ms, light.model), mid = f.cover(cr.lat, cr.lon, "mid", m.ms, light.model);
+      if (Math.max(low, mid) >= 80) return null;                // in cloud
+    }
+    return { r: c.r, g: c.g, b: c.b, a: a };
+  }
+
+  // Full screen panorama: the light panel (verdict, slider, skyline) fills the screen.
+  function setPanoFull(on) {
+    var box = $("light"), btn = $("pano-full");
+    if (!box.classList) return;
+    if (on && !light.pano) $("light-pano-btn").click();
+    box.classList.toggle("pano-full", on);
+    document.body.classList.toggle("pano-open", on);
+    btn.setAttribute("aria-pressed", String(on));
+    btn.title = on ? "Exit full screen" : "Full screen";
+    if (on && box.requestFullscreen && !document.fullscreenElement) box.requestFullscreen().catch(function () { /* CSS full screen is enough */ });
+    if (!on && document.fullscreenElement === box) document.exitFullscreen().catch(function () {});
+    setTimeout(function () { if (light.state === "ready") renderLight(); }, 60);
+    $("map").dataset.panoFull = String(on);
+  }
+
   function setupPano() {
     var cv = $("pano");
     if (!cv.addEventListener || !cv.getContext) return;
     var dragX = null, startC = 0;
     var redraw = function () { if (light.state === "ready") renderLight(); };
     $("pano-compass").addEventListener("click", toggleCompass);
+    $("pano-full").addEventListener("click", function () { setPanoFull(!$("light").classList.contains("pano-full")); });
+    document.addEventListener("fullscreenchange", function () {
+      if (!document.fullscreenElement && $("light").classList.contains("pano-full")) setPanoFull(false);
+    });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape" && $("light").classList.contains("pano-full")) setPanoFull(false); });
+    window.addEventListener("resize", function () { if (light.pano && light.state === "ready") renderLight(); });
     cv.addEventListener("pointerdown", function (e) { if (compass.on) return; dragX = e.clientX; startC = pano.center || 0; cv.setPointerCapture(e.pointerId); });
     cv.addEventListener("pointermove", function (e) {
       if (dragX === null) return;

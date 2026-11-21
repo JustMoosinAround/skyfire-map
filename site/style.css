@@ -333,3 +333,17 @@ body.full .map-wrap { min-height: 0; border-radius: 0; border-left: 0; border-ri
   .sun-help { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* ---- Panorama full screen: the light panel fills the screen with the skyline -------------- */
+.light.pano-full {
+  position: fixed; inset: 0; z-index: 3000; margin: 0; border: 0; border-radius: 0;
+  display: flex; flex-direction: column;
+  padding: max(8px, env(safe-area-inset-top, 0px)) max(10px, env(safe-area-inset-right, 0px)) max(8px, env(safe-area-inset-bottom, 0px)) max(10px, env(safe-area-inset-left, 0px));
+  background: var(--bg);
+}
+.light.pano-full .light-size, .light.pano-full #section-wrap, .light.pano-full .light-details,
+.light.pano-full .rain-bar, .light.pano-full .light-head .light-more { display: none !important; }
+.light.pano-full #pano-wrap { display: flex !important; flex-direction: column; flex: 1; min-height: 0; }
+.light.pano-full .pano-box { flex: 1; min-height: 0; }
+.light.pano-full .pano { height: 100%; }
+body.pano-open { overflow: hidden; }

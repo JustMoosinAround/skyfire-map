@@ -37,3 +37,16 @@ for (const path of ["/products/noaa-planetary-k-index.json", "/products/noaa-pla
     console.log("NOAA", path, r.status, "CORS:", r.headers.get("access-control-allow-origin"), "rows", Array.isArray(j) ? j.length : "-", JSON.stringify(last).slice(0, 160));
   } catch (e) { console.log("NOAA", path, "FAILED", e.message); }
 }
+
+// NASA GIBS night-lights tiles for the light pollution layer (Alaska at zoom 5: y 9, x 2).
+for (const url of [
+  "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/5/9/2.png",
+  "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_CityLights_2012/default/2012-01-01/GoogleMapsCompatible_Level8/5/9/2.jpg",
+  "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/8/72/22.png",
+]) {
+  try {
+    const r = await fetch(url, { headers: { Origin: "https://justmoosinaround.github.io" } });
+    const buf = Buffer.from(await r.arrayBuffer());
+    console.log("GIBS", r.status, r.headers.get("content-type"), buf.length, "bytes", "CORS:", r.headers.get("access-control-allow-origin"), url.split("/").slice(6).join("/"));
+  } catch (e) { console.log("GIBS FAILED", url, e.message); }
+}

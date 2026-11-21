@@ -1,0 +1,55 @@
+name: build-android
+# Builds the SkyFire Android app (android/), signs it with the key kept in the private skyfire repo,
+# and publishes it as a GitHub release: .../releases/latest/download/skyfire.apk
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["android/**"]
+permissions:
+  contents: write
+concurrency:
+  group: build-android
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Signing key from the private repo (read-only token)
+        uses: actions/checkout@v4
+        with:
+          repository: JustMoosinAround/skyfire
+          token: ${{ secrets.SKY_ALERTS_READ_TOKEN }}
+          path: private
+          sparse-checkout: android-signing
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+      - name: Build and sign
+        run: |
+          export SIGNING_STORE="$GITHUB_WORKSPACE/private/android-signing/skyfire-release.p12"
+          export SIGNING_PASSWORD="$(cat "$GITHUB_WORKSPACE/private/android-signing/password.txt")"
+          export VERSION_CODE="${{ github.run_number }}"
+          export VERSION_NAME="1.${{ github.run_number }}"
+          gradle -p android assembleRelease --no-daemon --stacktrace
+          cp android/app/build/outputs/apk/release/app-release.apk skyfire.apk
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$BT/apksigner" verify --print-certs skyfire.apk | head -5
+          ls -la skyfire.apk
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="android-v1.${{ github.run_number }}"
+          gh release create "$TAG" skyfire.apk --repo "$GITHUB_REPOSITORY" --latest \
+            --title "SkyFire for Android 1.${{ github.run_number }}" \
+            --notes "Install: open this on your Android phone, download skyfire.apk and allow installs from your browser when asked. The app shows the SkyFire map full screen; map updates arrive automatically."

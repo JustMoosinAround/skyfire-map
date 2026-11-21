@@ -160,13 +160,20 @@
   }
 
   // Open-Meteo, same request as the SkyFire forecast runs, in batches. Resolves to a Forecast.
+  // Where requests go: Open-Meteo's free API, or (SkyFire Pro) the Pro server with the licence.
+  var source = null;
+  function configure(src) { source = src || null; }
+  function forecastUrl() { return source ? source.forecast : API; }
+  function elevationUrl() { return source ? source.elevation : ELEV_API; }
+  function defaultFetch() { return source && source.fetch ? source.fetch : root.fetch.bind(root); }
+
   function fetchForecast(nodes, dayIso, fetchFn) {
-    fetchFn = fetchFn || root.fetch.bind(root);
+    fetchFn = fetchFn || defaultFetch();
     var day = dayIso.slice(0, 10), next = new Date(Date.parse(day + "T00:00:00Z") + 86400000).toISOString().slice(0, 10);
     var batches = [];
     for (var i = 0; i < nodes.length; i += 100) batches.push(nodes.slice(i, i + 100));
     var urls = batches.map(function (b) {
-      return API + "?latitude=" + b.map(function (p) { return p[0]; }).join(",") +
+      return forecastUrl() + "?latitude=" + b.map(function (p) { return p[0]; }).join(",") +
         "&longitude=" + b.map(function (p) { return p[1]; }).join(",") +
         "&hourly=cloud_cover_low,cloud_cover_mid,cloud_cover_high,precipitation&models=" + MODELS.join(",") +
         "&start_date=" + day + "&end_date=" + next + "&timezone=GMT";
@@ -264,11 +271,11 @@
   }
 
   function fetchProfiles(lat, lon, az0, az1, fetchFn) {
-    fetchFn = fetchFn || root.fetch.bind(root);
+    fetchFn = fetchFn || defaultFetch();
     var plan = profilePlan(lat, lon, az0, az1), pts = plan.pts, batches = [];
     for (var j = 0; j < pts.length; j += 100) batches.push(pts.slice(j, j + 100));
     var urls = batches.map(function (b) {
-      return ELEV_API + "?latitude=" + b.map(function (p) { return p[0].toFixed(4); }).join(",") +
+      return elevationUrl() + "?latitude=" + b.map(function (p) { return p[0].toFixed(4); }).join(",") +
         "&longitude=" + b.map(function (p) { return p[1].toFixed(4); }).join(",");
     });
     return inSequence(urls, fetchFn).then(function (js) {
@@ -411,7 +418,7 @@
   var api = { LAYERS: LAYERS, MODELS: MODELS, MODEL_NAMES: MODEL_NAMES, MAX_KM: MAX_KM, BLOCK: BLOCK, PARTIAL: PARTIAL,
     sunPos: sunPos, apparent: apparent, sunEvent: sunEvent, dest: dest, rayHeight: rayHeight, distanceAt: distanceAt,
     layerStretches: layerStretches, nodesFor: nodesFor, fetchForecast: fetchForecast, Forecast: Forecast,
-    fetchProfiles: fetchProfiles, localProfiles: localProfiles, BEHIND_KM: BEHIND_KM, Terrain: Terrain, hillsBlock: hillsBlock, PROFILE_STEP_KM: PROFILE_STEP_KM,
+    configure: configure, fetchProfiles: fetchProfiles, localProfiles: localProfiles, BEHIND_KM: BEHIND_KM, Terrain: Terrain, hillsBlock: hillsBlock, PROFILE_STEP_KM: PROFILE_STEP_KM,
     minute: minute, windowFor: windowFor, azRange: azRange, shadowHeight: shadowHeight, DARK_ALT: DARK_ALT, RAIN_MIN: RAIN_MIN, timeline: timeline, summary: summary };
   root.SkyLight = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;

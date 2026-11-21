@@ -366,3 +366,14 @@ body.pano-open { overflow: hidden; }
 .dark-bar i.moonlit { background: #5b6478; } .dark-bar i.dark { background: #2ac58a; }
 .dark-ticks { display: flex; justify-content: space-between; color: var(--muted); font-size: 0.7rem; margin-top: 2px; }
 .leaflet-lights-pane { mix-blend-mode: screen; }
+
+/* ---- SkyFire Pro: the locked light panel -------------------------------------------- */
+.light.locked > :not(.light-pro):not(.light-size) { display: none !important; }
+.light-pro p { margin: 0; }
+.light-pro-title { font-weight: 700; }
+.light-pro-text { color: var(--muted); font-size: 0.875rem; margin-top: 4px !important; }
+.light-pro-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.pro-badge { display: inline-block; padding: 1px 7px; margin-right: 4px; border-radius: 999px; background: var(--fire); color: #1b0f06; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.04em; vertical-align: 1px; }
+.btn-pro { display: inline-block; padding: 8px 16px; border-radius: 999px; background: var(--fire); color: #1b0f06; font-weight: 700; font-size: 0.875rem; text-decoration: none; }
+.btn-pro.alt { background: none; color: var(--text); border: 1px solid var(--line); font-weight: 600; }
+.btn-pro:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }

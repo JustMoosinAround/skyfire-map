@@ -123,7 +123,7 @@
 
   // ---- State ----------------------------------------------------------------
   var index, map, tabFiles = {}, current = null, loadToken = 0;
-  var fieldLayer = null, sunLayer, detailLayers, pin, lightsLayer = null;
+  var fieldLayer = null, sunLayer, detailLayers, pin, lightsLayer = null, tilesOn = true;
   var opacity = FIELD_OPACITY, showSun = true, dragging = false;
 
   // ---- Start ----------------------------------------------------------------
@@ -140,6 +140,14 @@
 
   function start(data) {
     index = data;
+    // SkyFire Pro: off = everything free (Open-Meteo's free API, as before); on = Pro features need a licence
+    if (window.SkyPro) {
+      SkyPro.configure(data.pro);
+      $("pro-link").hidden = !SkyPro.enabled();
+      SkyLight.configure(SkyPro.forecastSource());
+      SkyPro.onChange(function () { light.key = null; if (map) drawSun(); });
+      SkyPro.refresh();
+    }
     var title = data.title || "SkyFire";
     $("title").textContent = title;
     document.title = title;
@@ -233,7 +241,12 @@
     if (window.ResizeObserver) {
       new ResizeObserver(function () { map.invalidateSize({ animate: false }); }).observe($("map"));
     }
-    L.tileLayer(TILES, { minZoom: DETAIL_ZOOM, maxZoom: 12, attribution: OSM_CREDIT }).addTo(map);
+    // OpenStreetMap's tiles aren't for commercial apps: with Pro on, use a configured commercial tile URL or
+    // only SkyFire's own base map (coast, hillshade, roads, towns) at every zoom.
+    var pro = index.pro || {};
+    tilesOn = !pro.enabled || !!pro.tiles_url;
+    if (!pro.enabled) L.tileLayer(TILES, { minZoom: DETAIL_ZOOM, maxZoom: 12, attribution: OSM_CREDIT }).addTo(map);
+    else if (pro.tiles_url) L.tileLayer(pro.tiles_url, { minZoom: DETAIL_ZOOM, maxZoom: 12, attribution: "Map tiles: licensed provider" }).addTo(map);
     L.imageOverlay("assets/hillshade.png", bounds, { pane: "shade", interactive: false, opacity: 0.85 }).addTo(map);
     // Light pollution: NASA's night-lights imagery (VIIRS City Lights, via GIBS), blended so black is clear
     map.createPane("lights").style.zIndex = 255;
@@ -269,7 +282,7 @@
       icon: L.divIcon({ className: cls, html: node, iconSize: null, iconAnchor: anchor }) }).addTo(detailLayers);
   }
   function toggleDetail() {
-    var close = map.getZoom() >= DETAIL_ZOOM;
+    var close = tilesOn && map.getZoom() >= DETAIL_ZOOM;   // no tiles: keep our own coast, roads and labels
     if (close && map.hasLayer(detailLayers)) map.removeLayer(detailLayers);
     if (!close && !map.hasLayer(detailLayers)) detailLayers.addTo(map);
   }
@@ -1275,6 +1288,15 @@
     light.p = p; light.ev = { ms: ev.time.getTime(), az: ev.az }; light.rising = rising;
     light.win = SkyLight.windowFor(light.ev, rising, p.lat, p.lng);
     $("light").hidden = false;
+    var locked = window.SkyPro && !SkyPro.active();
+    if ($("light").classList) $("light").classList.toggle("locked", !!locked);
+    $("light-pro").hidden = !locked;
+    if (locked) {   // SkyFire Pro is on and this viewer has no active licence: offer it, call nothing
+      light.state = "locked"; light.key = null;
+      if (rayLayer) rayLayer.clearLayers();
+      $("map").dataset.light = "locked";
+      return;
+    }
     $("sunbox").hidden = true;   // the panel under the map says it all; keep the map clear
     if (key !== light.key) {
       light.key = key;

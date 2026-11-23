@@ -11,14 +11,16 @@
 <link rel="icon" href="icons/favicon-32.png" sizes="32x32">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
-<link rel="stylesheet" href="style.css?v=19">
+<link rel="stylesheet" href="style.css?v=20">
 </head>
 <body>
 <header class="site-header">
-  <a id="logo-link" class="logo-link" target="_top" rel="noopener" hidden><img id="logo" alt=""></a>
-  <h1 id="title" class="site-title">SkyFire</h1>
-  <!-- Fallback href so the link still works when index.json cannot load. -->
-  <a id="contact" class="contact" href="https://www.ypsak.com/contact" target="_top" rel="noopener">Contact me</a>
+  <img class="brand-icon" src="logo.png?v=20" alt="" width="56" height="56">
+  <div class="brand-text">
+    <h1 id="title" class="site-title">SkyFire</h1>
+    <p class="brand-cta">See where tonight's sky will light up.</p>
+  </div>
+  <a id="get-app-btn" class="get-app-btn" href="install.html" target="_blank" rel="noopener">Get the app</a>
 </header>
 
 <main id="app">
@@ -113,7 +115,7 @@
     <a class="photo-btn" id="photo-btn" href="https://www.dropbox.com/request/w9qyfhhkx9bqnb2c4g07" target="_blank" rel="noopener">
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 5.5h2.5l1.2-2h4.6l1.2 2H14v8H2z"/><circle cx="8" cy="9.3" r="2.6"/></svg>
       Send a sky photo</a>
-    <span class="photo-note">Saw the sky? Your photo is compared with the forecast to make SkyFire better. Send the original photo so its time and place come with it.</span>
+    <span class="photo-note">Saw the sky? Your photo helps tune the forecast.</span>
   </p>
   <section id="legend" class="legend" aria-label="Colour key" hidden>
     <div id="key-bar" class="key-bar"></div>
@@ -122,15 +124,15 @@
 </main>
 
 <footer id="footer" class="site-footer" hidden>
-  <p class="how">Colours show what kind of sky to expect: white-grey is cloud in the way, yellow is clear but plain, and orange, pink and purple are where colour is likely. Tap the map for the % chance there. Drag the sun pin to any spot: the panel under the map checks, minute by minute, whether the sun's light gets through the clouds to you, and the rings show where low, mid and high clouds meet your horizon.</p>
-  <p class="small"><span class="site-credits"></span> · Refreshed 3× daily · <a class="get-app" href="install.html" target="_blank" rel="noopener">Get the app</a><span id="pro-link" hidden> · <a class="get-app" href="pro.html">SkyFire Pro</a></span> · <a class="get-app" href="terms.html">Terms</a> · <a class="get-app" href="privacy.html">Privacy</a></p>
+  <p class="how">Grey is little chance of colour; magenta is the best. Tap the map to move the pin.</p>
+  <p class="small"><span class="site-credits"></span><span id="pro-link" hidden> · <a class="get-app" href="pro.html">SkyFire Pro</a></span> · <a class="get-app" href="terms.html">Terms</a> · <a class="get-app" href="privacy.html">Privacy</a> · <a id="contact" class="get-app" href="https://www.ypsak.com/contact" target="_top" rel="noopener">Contact me</a></p>
 </footer>
 
 <script src="vendor/leaflet/leaflet.js"></script>
-<script src="lightcheck.js?v=19"></script>
-<script src="panorama.js?v=19"></script>
-<script src="moon.js?v=19"></script>
-<script src="pro.js?v=19"></script>
-<script src="app.js?v=19"></script>
+<script src="lightcheck.js?v=20"></script>
+<script src="panorama.js?v=20"></script>
+<script src="moon.js?v=20"></script>
+<script src="pro.js?v=20"></script>
+<script src="app.js?v=20"></script>
 </body>
 </html>

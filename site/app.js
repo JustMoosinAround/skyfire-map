@@ -133,6 +133,7 @@
 
   function unavailable() {
     $("unavailable").hidden = false;
+    $("footer").hidden = false;   // keeps the Contact link reachable
     $("tabs").hidden = true;
     $("when").hidden = true;
     document.body.classList.add("is-unavailable");
@@ -207,16 +208,9 @@
     var link = $("contact");
     if (data.contact_label) link.textContent = data.contact_label;
     if (/^https:\/\//.test(data.contact_url || "")) link.href = data.contact_url;
-    var root = null;
-    try { root = new URL(link.href).origin + "/"; } catch (e) { /* keep none */ }
-    if (data.logo) {
-      var img = $("logo");
-      var logoLink = $("logo-link");
-      if (root) logoLink.href = root;
-      img.addEventListener("load", function () { logoLink.hidden = false; });
-      img.addEventListener("error", function () { logoLink.hidden = true; });
-      img.src = data.logo;
-    }
+    // Inside the installed app (Android app or home-screen app) there is no need for "Get the app".
+    var standalone = window.matchMedia && window.matchMedia("(display-mode: standalone)").matches;
+    if (standalone || /SkyFireApp/.test(navigator.userAgent)) document.body.classList.add("in-app");
   }
 
   // ---- Map and base map --------------------------------------------------------
@@ -241,6 +235,7 @@
     if (window.ResizeObserver) {
       new ResizeObserver(function () { map.invalidateSize({ animate: false }); }).observe($("map"));
     }
+    setupGestures();
     // OpenStreetMap's tiles aren't for commercial apps: with Pro on, use a configured commercial tile URL or
     // only SkyFire's own base map (coast, hillshade, roads, towns) at every zoom.
     var pro = index.pro || {};
@@ -399,6 +394,31 @@
     if (label) label.textContent = on ? "Exit full screen" : "Full screen";
     b.title = on ? "Exit full screen" : "Full screen";
     if (map) setTimeout(function () { map.invalidateSize({ animate: false }); }, 60);
+    applyGestures();
+  }
+  // Inside a web page (the Wix embed) on a phone, the map filled the frame and one-finger swipes panned
+  // it, so the page could not be scrolled back up. There, one finger scrolls the page and two fingers
+  // move and zoom the map (taps and the pin still work); full screen restores one-finger panning.
+  var gestures = { on: false, timer: null };
+  function setupGestures() {
+    var coarse = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+    if (!inFrame() || !coarse) return;
+    gestures.on = true;
+    var hint = document.createElement("div");
+    hint.className = "map-hint"; hint.id = "map-hint"; hint.hidden = true;
+    hint.textContent = "Use two fingers to move the map";
+    $("map-wrap").appendChild(hint);
+    $("map").addEventListener("touchmove", function (e) {
+      if (document.body.classList.contains("full") || e.touches.length !== 1) { hint.hidden = true; return; }
+      hint.hidden = false;
+      clearTimeout(gestures.timer);
+      gestures.timer = setTimeout(function () { hint.hidden = true; }, 1200);
+    }, { passive: true });
+    applyGestures();
+  }
+  function applyGestures() {
+    if (!gestures.on || !map) return;
+    if (document.body.classList.contains("full")) map.dragging.enable(); else map.dragging.disable();
   }
   function inFrame() { try { return window.self !== window.top; } catch (e) { return true; } }
   function toggleFull() {
@@ -473,11 +493,11 @@
 
   // The explainer under the map, for the kind of map on show.
   var HOW = {
-    sky: "Colours show the % chance of a colourful sky, from grey (little chance) through yellow and orange to red and magenta (best). Tap the map to move the sun pin there and see the chance: the panel under the map checks, minute by minute until dark, whether the sun's light gets through the clouds to you and which clouds stay lit after sunset, and the rings show where low, mid and high clouds meet your horizon.",
-    aurora: "Colours show where the night sky should be clear for the northern lights: green is clear and dark, blue is clear but still in twilight, teal is clear toward the north, and white-grey is cloud. Look north. Tap the map for the cloud overhead and to the north.",
-    meteor: "Colours show where the night sky should be clear for meteors: green is clear and dark, blue is clear but still in twilight, and white-grey is cloud. Tap the map for the cloud overhead.",
-    nlc: "Noctilucent clouds glow low in the northern sky an hour or two after sunset in summer. Blue shows where the northern sky should be clear; white-grey is cloud. Tap the map for the cloud to the north.",
-    denali: "Colours show the chance of seeing Denali from each spot at the hour you pick, from red (cloud in the way) through amber to green (clear view); dark is where hills hide the mountain. Tap the map to move the pin: the line to Denali is green where the way is clear and red where cloud sits on it, and the box gives the % chance, how much of the mountain clears the hills, and the best hour in the next 2 days.",
+    sky: "Grey is little chance of colour; magenta is the best. Tap the map to move the pin.",
+    aurora: "Green: clear and dark. Blue: clear, still twilight. Grey: cloud. Look north.",
+    meteor: "Green: clear and dark. Blue: clear, still twilight. Grey: cloud.",
+    nlc: "Noctilucent clouds glow low in the north after summer sunsets. Blue: clear to the north.",
+    denali: "Green: clear view of Denali. Red: cloud in the way. Dark: hills block it. Tap to move the pin.",
   };
   // ---- Space weather now (Aurora tab): NOAA SWPC, refreshed every 5 minutes while showing ----------
   var SWPC = "https://services.swpc.noaa.gov";
@@ -560,8 +580,7 @@
         line.appendChild(document.createTextNode(" " + timeOnly(new Date(t0).toISOString()) + "–" + timeOnly(new Date(t0 + 3 * 3600e3).toISOString()) + (i < rows.length - 1 ? " · " : "")));
       });
     }
-    $("space-note").textContent = "Around Anchorage, Kp 2–3 can show low in the north on a dark, clear night; Kp 4+ is a good chance. " +
-      "Bz pointing south (negative), especially below −5 nT for a while, makes aurora much more likely. NOAA SWPC, updated " +
+    $("space-note").textContent = "Kp 4+ or Bz below −5 nT: good chance around Anchorage. NOAA SWPC, " +
       timeOnly(new Date().toISOString()) + ".";
     $("map").dataset.space = [kp ? "kp" : "", mag ? "bz" : "", wind ? "wind" : ""].join(",");
   }
@@ -1423,7 +1442,7 @@
         rings.appendChild(sw);
         rings.appendChild(document.createTextNode(capital(st.layer) + " " + fmtRange(st.from, st.to, st.to >= SkyLight.MAX_KM)));
       });
-    } else rings.textContent = "The sun is down: the Section view shows the Earth's shadow climbing through the clouds.";
+    } else rings.textContent = "The sun is down.";
     var models = $("light-models");
     models.textContent = "";
     Object.keys(light.tl).forEach(function (id) {
@@ -1496,11 +1515,11 @@
     var inGrid = pano.grid.at(p.lat, p.lng) !== null, glowN = drawn ? drawn.glow : 0;
     cv.dataset.glow = String(glowN);
     cv.dataset.moon = moonNow ? Math.round(moonNow.az) + "," + Math.round(moonNow.alt) : "";
-    cap.textContent = "From the pin, facing " + Math.round(pano.center) + "° " + compassName(pano.center) + ". " +
-      (compass.on ? "Compass on: turn with your phone (🧭 to stop). " : "Drag to look around; ☀ faces the sun; 🧭 follows your phone. ") +
-      "Heights are stretched " + (drawn ? Math.round(drawn.exag * 10) / 10 : pano.exag) + "×. " + (glowN ? "Warm ridges are still in sunlight (alpenglow). " : "") +
+    cap.textContent = "Facing " + Math.round(pano.center) + "° " + compassName(pano.center) + ". " +
+      (compass.on ? "Compass on (🧭 to stop). " : "Drag to look around. ") +
+      (glowN ? "Warm ridges: alpenglow. " : "") +
       (inGrid ? "" : "Terrain covers South-central Alaska only. ") +
-      "Peak names © OpenStreetMap contributors.";
+      "Heights ×" + (drawn ? Math.round(drawn.exag * 10) / 10 : pano.exag) + ". Peaks © OpenStreetMap.";
     cv.dataset.drawn = String(m.ms);
     cv.dataset.peaks = String(pano.vis.length);
   }
@@ -1730,14 +1749,13 @@
     ctx.fillText("you", X(0), H - 4);
     ctx.strokeStyle = "rgba(233,237,243,0.25)"; ctx.setLineDash([2, 4]); ctx.beginPath();
     ctx.moveTo(X(0), padT); ctx.lineTo(X(0), H - padB); ctx.stroke(); ctx.setLineDash([]);
-    ctx.textAlign = "left"; ctx.fillText("← behind you", X(dMin) + 4, padT + 12);
+    ctx.textAlign = "left"; ctx.fillText("← away from the sun", X(dMin) + 4, padT + 12);
     ctx.textAlign = "right"; ctx.fillText("toward the sun →", W - padR - 4, padT + 12);
     ctx.textAlign = "left";
     var dir = Math.round(m.az) + "° " + compassName(m.az);
-    $("section-caption").textContent = "Looking toward the sun, " + dir + ". " + (m.alt < 0
-      ? "The sun is down: below the pink line is the Earth's shadow; cloud above it is still lit. Heights are stretched "
-      : "The ray climbs as the Earth curves away; heights are stretched ") +
-      Math.round(((dMax - dMin) * 1000 / (W - padL - padR)) / (SECTION_TOP_M / (H - padT - padB))) + "×." +
+    $("section-caption").textContent = "Toward the sun, " + dir + ". " + (m.alt < 0
+      ? "Below the pink line is the Earth's shadow; cloud above it is still lit. " : "") + "Heights ×" +
+      Math.round(((dMax - dMin) * 1000 / (W - padL - padR)) / (SECTION_TOP_M / (H - padT - padB))) + "." +
       (t ? "" : " Terrain unavailable: showing a sea-level horizon.");
     cv.dataset.drawn = String(m.ms);
   }

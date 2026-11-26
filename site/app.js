@@ -154,6 +154,7 @@
     document.title = title;
 
     setupContact(data);
+    setupPhotoUpload(data);
     $("footer").hidden = false;
     document.querySelector(".site-credits").textContent = data.credits || "";
 
@@ -211,6 +212,74 @@
     // Inside the installed app (Android app or home-screen app) there is no need for "Get the app".
     var standalone = window.matchMedia && window.matchMedia("(display-mode: standalone)").matches;
     if (standalone || /SkyFireApp/.test(navigator.userAgent)) document.body.classList.add("in-app");
+  }
+
+  // ---- Send a sky photo: SkyFire's own upload (with where it was taken) when switched on --------------
+  // Phones remove the location from photos picked in a browser, so the form sends the place with it:
+  // the map pin, or the phone's location. Without an upload service the button stays a Dropbox link.
+  function setupPhotoUpload(data) {
+    var url = /^https:\/\//.test(data.photo_upload || "") ? data.photo_upload : "";
+    var dlg = document.getElementById("photo-dlg"), btn = $("photo-btn");
+    if (!url || !dlg || typeof dlg.showModal !== "function") return;
+    document.body.classList.add("has-upload");
+    var status = $("pf-status"), send = $("pf-send"), files = $("pf-files"), name = $("pf-name");
+    name.value = store.get("skymap.photo.name") || "";
+    function say(text, kind) { status.textContent = text; status.className = "pf-status" + (kind ? " " + kind : ""); }
+    function pinText() {
+      var p = pin ? pin.getLatLng() : null;
+      $("pf-pin-text").textContent = p ? "At the map pin (" + p.lat.toFixed(3) + ", " + p.lng.toFixed(3) + ")" : "At the map pin";
+    }
+    btn.addEventListener("click", function (e) {
+      e.preventDefault();
+      pinText(); say(""); files.value = ""; send.disabled = false;
+      dlg.showModal();
+    });
+    $("pf-cancel").addEventListener("click", function () { dlg.close(); });
+    function where() {
+      var choice = (document.querySelector('input[name="pf-place"]:checked') || {}).value;
+      if (choice !== "gps") {
+        var p = pin ? pin.getLatLng() : null;
+        return p ? Promise.resolve({ lat: p.lat, lon: p.lng, place: "pin" }) : Promise.reject(new Error("Move the pin to where you took it."));
+      }
+      return new Promise(function (resolve, reject) {
+        if (!navigator.geolocation) return reject(new Error("This browser can't share your location. Use the map pin instead."));
+        navigator.geolocation.getCurrentPosition(function (pos) {
+          resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude, place: "gps" });
+        }, function () { reject(new Error("Couldn't get your location. Use the map pin instead.")); }, { timeout: 15000, maximumAge: 600000 });
+      });
+    }
+    $("photo-form").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var list = Array.prototype.slice.call(files.files || []);
+      if (!list.length) { say("Choose one or more photos first.", "err"); return; }
+      store.set("skymap.photo.name", name.value.trim());
+      send.disabled = true;
+      say("Finding the place…");
+      where().then(function (loc) {
+        var done = 0;
+        return list.reduce(function (chain, f) {
+          return chain.then(function () {
+            say("Sending " + (done + 1) + " of " + list.length + "…");
+            var body = new FormData();
+            body.append("photo", f, f.name);
+            body.append("lat", String(loc.lat)); body.append("lon", String(loc.lon)); body.append("place", loc.place);
+            body.append("name", name.value.trim());
+            if (f.lastModified) body.append("taken", new Date(f.lastModified).toISOString());
+            return fetch(url, { method: "POST", body: body }).then(function (r) {
+              return r.json().catch(function () { return {}; }).then(function (j) {
+                if (!r.ok) throw new Error(j.error || "The photo couldn't be sent (HTTP " + r.status + ").");
+                done++;
+              });
+            });
+          });
+        }, Promise.resolve()).then(function () {
+          say(done === 1 ? "Sent. Thank you!" : "Sent " + done + " photos. Thank you!", "ok");
+          files.value = "";
+        });
+      }).catch(function (err) {
+        say(err && err.message ? err.message : "The photo couldn't be sent. Please try again.", "err");
+      }).then(function () { send.disabled = false; });
+    });
   }
 
   // ---- Map and base map --------------------------------------------------------

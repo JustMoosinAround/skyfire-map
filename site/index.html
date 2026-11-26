@@ -11,11 +11,11 @@
 <link rel="icon" href="icons/favicon-32.png" sizes="32x32">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
-<link rel="stylesheet" href="style.css?v=20">
+<link rel="stylesheet" href="style.css?v=21">
 </head>
 <body>
 <header class="site-header">
-  <img class="brand-icon" src="logo.png?v=20" alt="" width="56" height="56">
+  <img class="brand-icon" src="logo.png?v=21" alt="" width="56" height="56">
   <div class="brand-text">
     <h1 id="title" class="site-title">SkyFire</h1>
     <p class="brand-cta">See where tonight's sky will light up.</p>
@@ -115,8 +115,27 @@
     <a class="photo-btn" id="photo-btn" href="https://www.dropbox.com/request/w9qyfhhkx9bqnb2c4g07" target="_blank" rel="noopener">
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 5.5h2.5l1.2-2h4.6l1.2 2H14v8H2z"/><circle cx="8" cy="9.3" r="2.6"/></svg>
       Send a sky photo</a>
-    <span class="photo-note">Saw the sky? Your photo helps tune the forecast.</span>
+    <span class="photo-note">Saw the sky? Your photo helps tune the forecast.<span id="photo-hint"> On Android, share from the Dropbox app to keep the photo's location.</span></span>
   </p>
+  <dialog id="photo-dlg" class="photo-dlg" aria-labelledby="pf-title">
+    <form id="photo-form" novalidate>
+      <h2 id="pf-title" class="pf-title">Send a sky photo</h2>
+      <label class="pf-field">Photos
+        <input id="pf-files" type="file" accept="image/*" multiple></label>
+      <fieldset class="pf-field pf-place">
+        <legend>Where did you take it?</legend>
+        <label><input type="radio" name="pf-place" value="pin" checked> <span id="pf-pin-text">At the map pin</span></label>
+        <label><input type="radio" name="pf-place" value="gps"> Where I am now</label>
+      </fieldset>
+      <label class="pf-field">Your name (optional)
+        <input id="pf-name" maxlength="40" autocomplete="name"></label>
+      <p id="pf-status" class="pf-status" role="status" aria-live="polite"></p>
+      <div class="pf-row">
+        <button type="button" id="pf-cancel" class="pf-btn alt">Close</button>
+        <button type="submit" id="pf-send" class="pf-btn">Send</button>
+      </div>
+    </form>
+  </dialog>
   <section id="legend" class="legend" aria-label="Colour key" hidden>
     <div id="key-bar" class="key-bar"></div>
     <div id="key-ticks" class="key-ticks"></div>
@@ -129,10 +148,10 @@
 </footer>
 
 <script src="vendor/leaflet/leaflet.js"></script>
-<script src="lightcheck.js?v=20"></script>
-<script src="panorama.js?v=20"></script>
-<script src="moon.js?v=20"></script>
-<script src="pro.js?v=20"></script>
-<script src="app.js?v=20"></script>
+<script src="lightcheck.js?v=21"></script>
+<script src="panorama.js?v=21"></script>
+<script src="moon.js?v=21"></script>
+<script src="pro.js?v=21"></script>
+<script src="app.js?v=21"></script>
 </body>
 </html>

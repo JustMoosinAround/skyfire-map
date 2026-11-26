@@ -396,3 +396,19 @@ body.pano-open { overflow: hidden; }
 .photo-btn:focus-visible { outline: 2px solid var(--fire); outline-offset: 2px; }
 .photo-note { flex: 1 1 200px; color: var(--muted); font-size: 0.75rem; }
 body.full .photo-row { display: none; }
+.photo-dlg { width: min(26rem, calc(100% - 24px)); padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--chip); color: var(--text); }
+.photo-dlg::backdrop { background: rgba(5, 8, 14, 0.7); }
+.pf-title { margin: 0 0 10px; font-size: 1.1rem; }
+.pf-field { display: block; margin: 0 0 12px; font-size: 0.875rem; color: var(--muted); }
+.pf-field input[type=file], .pf-field input#pf-name { display: block; width: 100%; margin-top: 4px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; }
+.pf-place { border: 0; padding: 0; }
+.pf-place legend { padding: 0; margin-bottom: 4px; }
+.pf-place label { display: flex; align-items: center; gap: 8px; margin: 4px 0; color: var(--text); }
+.pf-status { min-height: 1.2em; margin: 0 0 10px; font-size: 0.85rem; }
+.pf-status.err { color: #ff9a8a; }
+.pf-status.ok { color: #7be0a8; }
+.pf-row { display: flex; justify-content: flex-end; gap: 10px; }
+.pf-btn { appearance: none; border: 0; border-radius: 999px; padding: 9px 18px; background: var(--fire); color: #1b0f06; font-weight: 700; cursor: pointer; }
+.pf-btn.alt { background: none; border: 1px solid var(--line); color: var(--text); font-weight: 600; }
+.pf-btn:disabled { opacity: 0.5; cursor: default; }
+body.has-upload #photo-hint { display: none; }

@@ -11,11 +11,11 @@
 <link rel="icon" href="icons/favicon-32.png" sizes="32x32">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
-<link rel="stylesheet" href="style.css?v=21">
+<link rel="stylesheet" href="style.css?v=22">
 </head>
 <body>
 <header class="site-header">
-  <img class="brand-icon" src="logo.png?v=21" alt="" width="56" height="56">
+  <img class="brand-icon" src="logo.png?v=22" alt="" width="56" height="56">
   <div class="brand-text">
     <h1 id="title" class="site-title">SkyFire</h1>
     <p class="brand-cta">See where tonight's sky will light up.</p>
@@ -52,8 +52,8 @@
     <button id="light-size" class="light-size" type="button" title="Panel size: tap to change">
       <span class="grip" aria-hidden="true"></span><span id="light-size-label">Standard</span></button>
     <div id="light-pro" class="light-pro" hidden>
-      <p class="light-pro-title"><span class="pro-badge">Pro</span> Will the light reach this spot?</p>
-      <p class="light-pro-text">SkyFire Pro checks, minute by minute until dark, whether the sun's light gets through the clouds to your pin, which clouds stay lit after sunset, and shows the skyline with peaks, alpenglow and the moon.</p>
+      <p class="light-pro-title"><span class="pro-badge">Pro</span> Will the light reach you?</p>
+      <p class="light-pro-text">Minute-by-minute light, skyline, alpenglow and moon at your pin.</p>
       <div class="light-pro-row">
         <a id="pro-trial" class="btn-pro" href="pro.html">Start free trial</a>
         <a class="btn-pro alt" href="pro.html#restore">I have a licence</a>
@@ -115,7 +115,7 @@
     <a class="photo-btn" id="photo-btn" href="https://www.dropbox.com/request/w9qyfhhkx9bqnb2c4g07" target="_blank" rel="noopener">
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 5.5h2.5l1.2-2h4.6l1.2 2H14v8H2z"/><circle cx="8" cy="9.3" r="2.6"/></svg>
       Send a sky photo</a>
-    <span class="photo-note">Saw the sky? Your photo helps tune the forecast.<span id="photo-hint"> On Android, share from the Dropbox app to keep the photo's location.</span></span>
+    <span class="photo-note" id="photo-hint">Android: share from the Dropbox app to keep the location.</span>
   </p>
   <dialog id="photo-dlg" class="photo-dlg" aria-labelledby="pf-title">
     <form id="photo-form" novalidate>
@@ -123,11 +123,11 @@
       <label class="pf-field">Photos
         <input id="pf-files" type="file" accept="image/*" multiple></label>
       <fieldset class="pf-field pf-place">
-        <legend>Where did you take it?</legend>
-        <label><input type="radio" name="pf-place" value="pin" checked> <span id="pf-pin-text">At the map pin</span></label>
-        <label><input type="radio" name="pf-place" value="gps"> Where I am now</label>
+        <legend>Where?</legend>
+        <label><input type="radio" name="pf-place" value="pin" checked> <span id="pf-pin-text">Map pin</span></label>
+        <label><input type="radio" name="pf-place" value="gps"> My location</label>
       </fieldset>
-      <label class="pf-field">Your name (optional)
+      <label class="pf-field">Name (optional)
         <input id="pf-name" maxlength="40" autocomplete="name"></label>
       <p id="pf-status" class="pf-status" role="status" aria-live="polite"></p>
       <div class="pf-row">
@@ -136,22 +136,22 @@
       </div>
     </form>
   </dialog>
-  <section id="legend" class="legend" aria-label="Colour key" hidden>
+  <section id="legend" class="legend" aria-label="Chance of colour" hidden>
     <div id="key-bar" class="key-bar"></div>
     <div id="key-ticks" class="key-ticks"></div>
   </section>
 </main>
 
 <footer id="footer" class="site-footer" hidden>
-  <p class="how">Grey is little chance of colour; magenta is the best. Tap the map to move the pin.</p>
+  <p class="how">Tap the map to move the pin.</p>
   <p class="small"><span class="site-credits"></span><span id="pro-link" hidden> · <a class="get-app" href="pro.html">SkyFire Pro</a></span> · <a class="get-app" href="terms.html">Terms</a> · <a class="get-app" href="privacy.html">Privacy</a> · <a id="contact" class="get-app" href="https://www.ypsak.com/contact" target="_top" rel="noopener">Contact me</a></p>
 </footer>
 
 <script src="vendor/leaflet/leaflet.js"></script>
-<script src="lightcheck.js?v=21"></script>
-<script src="panorama.js?v=21"></script>
-<script src="moon.js?v=21"></script>
-<script src="pro.js?v=21"></script>
-<script src="app.js?v=21"></script>
+<script src="lightcheck.js?v=22"></script>
+<script src="panorama.js?v=22"></script>
+<script src="moon.js?v=22"></script>
+<script src="pro.js?v=22"></script>
+<script src="app.js?v=22"></script>
 </body>
 </html>

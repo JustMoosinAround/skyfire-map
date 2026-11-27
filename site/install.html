@@ -41,78 +41,41 @@
     <img src="icons/icon-192.png" alt="">
     <div>
       <h1>Get SkyFire</h1>
-      <p class="tag">Sunrise, sunset, aurora and Denali forecasts for South-central Alaska.</p>
+      <p class="tag">Sunset, sunrise, aurora and Denali forecasts.</p>
     </div>
   </div>
 
-  <!-- Android: the app file -->
   <section class="card" id="android-app" hidden>
-    <h2>Get the Android app</h2>
-    <p style="margin:0 0 10px">SkyFire as a full app on your phone, free and not from the Play Store.</p>
+    <h2>Android app</h2>
     <div class="row" style="margin-top:0"><a class="btn" id="apk" href="https://github.com/JustMoosinAround/skyfire-map/releases/latest/download/skyfire.apk">Download SkyFire for Android</a></div>
-    <ol style="margin-top:12px">
-      <li>Tap <b>Download</b>, then open <b>skyfire.apk</b> when it finishes.</li>
-      <li>If Android asks, allow your browser to <b>install unknown apps</b> (Settings → this browser → Allow).</li>
-      <li>Tap <b>Install</b>. SkyFire appears with your other apps.</li>
-    </ol>
-    <p class="muted" style="margin:10px 0 0">Updates to the map and forecasts arrive automatically. Prefer not to install a file? Use the option below instead.</p>
+    <p class="muted" style="margin:10px 0 0">Open <b>skyfire.apk</b>, allow <b>install unknown apps</b> if asked, then tap <b>Install</b>.</p>
   </section>
 
-  <!-- Android (Chrome) -->
   <section class="card" id="android" hidden>
     <h2>Or add it from Chrome</h2>
-    <p id="android-ready" hidden>Tap the button and confirm. SkyFire gets its own icon on your home screen.</p>
-    <ol id="android-steps">
-      <li>Open this page in <b>Chrome</b>.</li>
-      <li>Tap <kbd>⋮</kbd> at the top right.</li>
-      <li>Tap <b>Install app</b> (or <b>Add to home screen</b>, then <b>Install</b>).</li>
-    </ol>
+    <p id="android-ready" hidden>Tap the button below.</p>
+    <p id="android-steps" style="margin:0">In Chrome, tap <kbd>⋮</kbd>, then <b>Install app</b>.</p>
   </section>
 
-  <!-- iPhone / iPad (Safari) -->
   <section class="card" id="ios" hidden>
-    <h2>Install on iPhone</h2>
-    <ol>
-      <li>Open this page in <b>Safari</b> (other browsers on iPhone can't install apps).</li>
-      <li>Tap <b>Share</b> (the square with the arrow).</li>
-      <li>Scroll down and tap <b>Add to Home Screen</b>, then <b>Add</b>.</li>
-    </ol>
+    <h2>iPhone</h2>
+    <p style="margin:0">In Safari, tap <b>Share</b>, then <b>Add to Home Screen</b>.</p>
   </section>
 
-  <!-- Computer -->
   <section class="card" id="desktop" hidden>
     <h2>On your phone</h2>
     <div class="qr">
       <img src="icons/install-qr.svg" alt="QR code for this page">
-      <p class="muted">Scan this with your phone's camera to open this page there, then follow the steps for Android or iPhone.</p>
+      <p class="muted">Scan this with your phone's camera.</p>
     </div>
-    <p class="muted" style="margin-top:12px">On a computer, Chrome and Edge can install it too: look for the install icon at the right of the address bar.
-      Android users can also <a href="https://github.com/JustMoosinAround/skyfire-map/releases/latest/download/skyfire.apk" style="color:inherit">download the Android app</a>.</p>
   </section>
 
   <div class="row">
     <button class="btn" id="install" type="button" hidden>Install SkyFire</button>
     <a class="btn alt" href="./">Open the map</a>
+    <a class="btn alt" href="https://www.ypsak.com/contact" target="_blank" rel="noopener">Send feedback</a>
   </div>
-  <p class="done" id="installed" hidden>Installed. Open SkyFire from your home screen or app list.</p>
-
-  <section class="card">
-    <h2>What to try</h2>
-    <ul>
-      <li><b>Sunset / Sunrise:</b> drag the sun pin to a spot you'd shoot from. The panel under the map says, minute by minute, if the sun's light gets through the clouds to you. Tap <b>Section</b> for the side view.</li>
-      <li><b>Denali View:</b> pick an hour and drag the pin to see the chance Denali shows from there.</li>
-      <li><b>Aurora:</b> green and blue show clear, dark sky tonight.</li>
-      <li>Tap anywhere on the map for the forecast at that spot.</li>
-    </ul>
-  </section>
-
-  <section class="card">
-    <h2>Tell me how it went</h2>
-    <p class="muted" style="margin:0">What worked, what didn't, and what your phone is. Screenshots help.</p>
-    <div class="row"><a class="btn alt" href="https://www.ypsak.com/contact" target="_blank" rel="noopener">Send feedback</a></div>
-  </section>
-
-  <p class="muted" style="margin-top:22px">Forecasts are a guide, made from free weather models (ECMWF, GFS, ICON via Open-Meteo). SkyFire works offline with the last forecast it downloaded.</p>
+  <p class="done" id="installed" hidden>Installed.</p>
 </main>
 <script>
 (function () {

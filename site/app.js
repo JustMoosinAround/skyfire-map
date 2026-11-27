@@ -53,11 +53,6 @@
   };
   KEYS.meteor = KEYS.aurora;
   KEYS.denali = [["hidden", "Hills in the way"], ["d0", "0%: cloud in the way"], ["d50", "50%"], ["d100", "100%: clear view"]];
-  var NIGHT_HINT = {
-    aurora: "Look north. Green and blue show clear, dark sky; white is cloud.",
-    meteor: "Green and blue show clear, dark sky; white is cloud.",
-    nlc: "Look low in the north after sunset. Blue shows a clear northern sky; white is cloud.",
-  };
 
   // A missing element (e.g. a cached page from another version) gives a harmless stand-in, never a crash.
   var STUB = { hidden: true, dataset: {}, style: {}, textContent: "", value: "", disabled: false,
@@ -162,7 +157,7 @@
     if (age > data.stale_hours * 3600e3) {
       opacity = STALE_OPACITY;
       var stale = $("stale");
-      stale.textContent = "This forecast is out of date (last updated " + dayTime(data.updated) + " Alaska time)";
+      stale.textContent = "Out of date (updated " + dayTime(data.updated) + ")";
       stale.hidden = false;
     }
 
@@ -202,7 +197,7 @@
   }
 
   function setWhen(tab) {
-    $("when").textContent = tab.label + " " + dayTime(tab.when) + " · updated " + timeOnly(index.updated) + " Alaska time";
+    $("when").textContent = tab.label + " " + dayTime(tab.when) + " · updated " + timeOnly(index.updated) + " AK";
   }
 
   function setupContact(data) {
@@ -227,7 +222,7 @@
     function say(text, kind) { status.textContent = text; status.className = "pf-status" + (kind ? " " + kind : ""); }
     function pinText() {
       var p = pin ? pin.getLatLng() : null;
-      $("pf-pin-text").textContent = p ? "At the map pin (" + p.lat.toFixed(3) + ", " + p.lng.toFixed(3) + ")" : "At the map pin";
+      $("pf-pin-text").textContent = p ? "Map pin (" + p.lat.toFixed(3) + ", " + p.lng.toFixed(3) + ")" : "Map pin";
     }
     btn.addEventListener("click", function (e) {
       e.preventDefault();
@@ -242,24 +237,24 @@
         return p ? Promise.resolve({ lat: p.lat, lon: p.lng, place: "pin" }) : Promise.reject(new Error("Move the pin to where you took it."));
       }
       return new Promise(function (resolve, reject) {
-        if (!navigator.geolocation) return reject(new Error("This browser can't share your location. Use the map pin instead."));
+        if (!navigator.geolocation) return reject(new Error("Location unavailable. Use the map pin."));
         navigator.geolocation.getCurrentPosition(function (pos) {
           resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude, place: "gps" });
-        }, function () { reject(new Error("Couldn't get your location. Use the map pin instead.")); }, { timeout: 15000, maximumAge: 600000 });
+        }, function () { reject(new Error("Location unavailable. Use the map pin.")); }, { timeout: 15000, maximumAge: 600000 });
       });
     }
     $("photo-form").addEventListener("submit", function (e) {
       e.preventDefault();
       var list = Array.prototype.slice.call(files.files || []);
-      if (!list.length) { say("Choose one or more photos first.", "err"); return; }
+      if (!list.length) { say("Choose a photo.", "err"); return; }
       store.set("skymap.photo.name", name.value.trim());
       send.disabled = true;
-      say("Finding the place…");
+      say("Locating…");
       where().then(function (loc) {
         var done = 0;
         return list.reduce(function (chain, f) {
           return chain.then(function () {
-            say("Sending " + (done + 1) + " of " + list.length + "…");
+            say("Sending " + (done + 1) + "/" + list.length + "…");
             var body = new FormData();
             body.append("photo", f, f.name);
             body.append("lat", String(loc.lat)); body.append("lon", String(loc.lon)); body.append("place", loc.place);
@@ -273,7 +268,7 @@
             });
           });
         }, Promise.resolve()).then(function () {
-          say(done === 1 ? "Sent. Thank you!" : "Sent " + done + " photos. Thank you!", "ok");
+          say("Sent. Thank you!", "ok");
           files.value = "";
         });
       }).catch(function (err) {
@@ -444,8 +439,8 @@
     var ios = /iPhone|iPad|iPod/i.test(navigator.userAgent);
     var note = $("map-note");
     note.textContent = ios
-      ? "To install SkyFire: tap the Share button, then “Add to Home Screen”."
-      : "To install SkyFire: tap ⋮ at the top right of Chrome, then “Install app” or “Add to Home screen”.";
+      ? "Tap Share, then “Add to Home Screen”."
+      : "Tap ⋮, then “Install app”.";
     note.hidden = false;
     clearTimeout(showInstallHelp.timer);
     showInstallHelp.timer = setTimeout(function () { note.hidden = true; }, 9000);
@@ -475,7 +470,7 @@
     gestures.on = true;
     var hint = document.createElement("div");
     hint.className = "map-hint"; hint.id = "map-hint"; hint.hidden = true;
-    hint.textContent = "Use two fingers to move the map";
+    hint.textContent = "Two fingers to move the map";
     $("map-wrap").appendChild(hint);
     $("map").addEventListener("touchmove", function (e) {
       if (document.body.classList.contains("full") || e.touches.length !== 1) { hint.hidden = true; return; }
@@ -534,7 +529,7 @@
       drawTab(tab, file);
     }, function () {
       if (token !== loadToken) return;
-      showNote("This map could not be loaded. Please try again later.");
+      showNote("Map unavailable. Try again later.");
     });
   }
 
@@ -562,11 +557,11 @@
 
   // The explainer under the map, for the kind of map on show.
   var HOW = {
-    sky: "Grey is little chance of colour; magenta is the best. Tap the map to move the pin.",
-    aurora: "Green: clear and dark. Blue: clear, still twilight. Grey: cloud. Look north.",
-    meteor: "Green: clear and dark. Blue: clear, still twilight. Grey: cloud.",
-    nlc: "Noctilucent clouds glow low in the north after summer sunsets. Blue: clear to the north.",
-    denali: "Green: clear view of Denali. Red: cloud in the way. Dark: hills block it. Tap to move the pin.",
+    sky: "Tap the map to move the pin.",
+    aurora: "Look north.",
+    meteor: "",
+    nlc: "Look low in the north.",
+    denali: "Tap the map to move the pin.",
   };
   // ---- Space weather now (Aurora tab): NOAA SWPC, refreshed every 5 minutes while showing ----------
   var SWPC = "https://services.swpc.noaa.gov";
@@ -624,7 +619,7 @@
     var now = $("space-now");
     now.textContent = "";
     if (!kp && !mag && !wind) {
-      now.appendChild(el("p", "space-note", "Live space weather couldn't be loaded. Check your connection; it retries every 5 minutes."));
+      now.appendChild(el("p", "space-note", "Space weather unavailable. Retrying."));
     }
     if (kp) {
       var k = +kp.estimated_kp;
@@ -649,7 +644,7 @@
         line.appendChild(document.createTextNode(" " + timeOnly(new Date(t0).toISOString()) + "–" + timeOnly(new Date(t0 + 3 * 3600e3).toISOString()) + (i < rows.length - 1 ? " · " : "")));
       });
     }
-    $("space-note").textContent = "Kp 4+ or Bz below −5 nT: good chance around Anchorage. NOAA SWPC, " +
+    $("space-note").textContent = "Good odds: Kp 4+ or Bz below −5. NOAA, " +
       timeOnly(new Date().toISOString()) + ".";
     $("map").dataset.space = [kp ? "kp" : "", mag ? "bz" : "", wind ? "wind" : ""].join(",");
   }
@@ -688,14 +683,14 @@
     atLine.textContent = "";
     atLine.appendChild(el("b", null, when + ": "));
     atLine.appendChild(document.createTextNode(pos.alt > 0
-      ? Math.round(pos.alt) + "° up in the " + compassName(pos.az) + " (" + Math.round(pos.az) + "°)"
+      ? Math.round(pos.alt) + "° up " + compassName(pos.az)
       : "below the horizon"));
     var day0 = akMidnight(at), rs = SkyMoon.riseSet(p.lat, p.lng, day0, day0 + 86400000);
     var rsText = rs.alwaysUp ? "Up all day" : rs.alwaysDown ? "Doesn't rise this day" :
       [rs.rise ? "Rises " + timeOnly(new Date(rs.rise).toISOString()) : "No moonrise", rs.set ? "sets " + timeOnly(new Date(rs.set).toISOString()) : "no moonset"].join(" · ");
     $("moon-rs").textContent = weekdayTime(new Date(day0 + 12 * 3600e3).toISOString()).split(" ")[0] + ": " + rsText;
     if (!moonCache.phases || Math.abs(Date.now() - moonCache.phasesAt) > 3600e3) {
-      moonCache.phases = SkyMoon.nextPhases(Date.now(), 4);
+      moonCache.phases = SkyMoon.nextPhases(Date.now(), 2);
       moonCache.phasesAt = Date.now();
     }
     var next = $("moon-next");
@@ -707,10 +702,10 @@
     });
     var note = "";
     if (tab && tab.data && /aurora|meteor/.test(tab.data.map_type)) {
-      note = il.fraction > 0.6 && pos.alt > 0 ? "A bright moon is up: it washes out faint aurora and meteors; strong displays still show."
-        : il.fraction > 0.6 ? "Bright moon, but below the horizon at this time: a darker sky." : "A thin or absent moon: a dark sky for faint aurora and meteors.";
+      note = il.fraction > 0.6 && pos.alt > 0 ? "Bright moon up: faint aurora washed out."
+        : il.fraction > 0.6 ? "Moon below the horizon." : "Little moon: dark sky.";
     } else if (tab && tab.data && tab.data.map_type === "sky") {
-      note = pos.alt > 0 && pos.alt < 15 ? "Low moon in the " + compassName(pos.az) + ": a chance to frame it with the sunset or sunrise colour." : "";
+      note = pos.alt > 0 && pos.alt < 15 ? "Low moon " + compassName(pos.az) + "." : "";
     }
     $("moon-note").textContent = note;
     var night = tab && tab.data && /aurora|meteor|nlc/.test(tab.data.map_type);
@@ -774,9 +769,9 @@
       if (rs.set) parts2.push("sets " + hm(rs.set));
     }
     $("moon-rs").textContent = "Tonight: " + parts2.join(" · ");
-    var text = best ? "Darkest: " + hm(best.a) + "–" + hm(best.b + step) + (moonlit ? " (moon down or thin)" : "") :
-      (cells.indexOf("nautical") < 0 ? "Too light all night (twilight)." : moonlit ? "No fully dark hours tonight: the moon is up whenever the sky is dark." : "No fully dark hours tonight.");
-    $("dark-text").textContent = text + " Grey = moonlit, green = dark, blue = twilight.";
+    var text = best ? "Darkest: " + hm(best.a) + "–" + hm(best.b + step) + "" :
+      (cells.indexOf("nautical") < 0 ? "Twilight all night." : moonlit ? "No dark hours (moonlit)." : "No dark hours.");
+    $("dark-text").textContent = text;
     $("map").dataset.dark = best ? String(Math.round((best.b - best.a) / 60000) + 5) : "0";
   }
 
@@ -784,7 +779,7 @@
     showLights(lightsWanted(mapType));
     spaceShow(mapType === "aurora");
     var how = document.querySelector(".site-footer .how");
-    if (how && HOW[mapType]) how.textContent = HOW[mapType];
+    if (how) { how.textContent = HOW[mapType] || ""; how.hidden = !HOW[mapType]; }
   }
 
   function drawTab(tab, file) {
@@ -1030,7 +1025,7 @@
       bar.style.background = "linear-gradient(90deg," + CHANCE_STOPS.map(function (st) {
         var c = st[1]; return "rgba(" + c[0] + "," + c[1] + "," + c[2] + "," + Math.min(1, c[3] + 0.15) + ") " + st[0] + "%";
       }).join(",") + ")";
-      ["0%", "25%", "50%", "75%", "100% chance of colour"].forEach(function (t) { ticks.appendChild(el("span", null, t)); });
+      ["0%", "25%", "50%", "75%", "100%"].forEach(function (t) { ticks.appendChild(el("span", null, t)); });
       $("legend").hidden = false;
       return;
     }
@@ -1232,8 +1227,8 @@
     var h = hourLabel(file.hours[denaliHour]);
     box.appendChild(el("p", "pop-when", h.day + " " + h.time + " · " + fmtDist(v.dist) + " away"));
     if (!v.hidden) {
-      box.appendChild(el("p", "pop-metrics", "Low cloud on the way " + Math.round(v.low) + "% · mid cloud " +
-        Math.round(v.mid) + "% · cloud on the mountain " + Math.round(v.cap) + "%"));
+      box.appendChild(el("p", "pop-metrics", "Low " + Math.round(v.low) + "% · mid " +
+        Math.round(v.mid) + "% · top " + Math.round(v.cap) + "%"));
     }
     L.popup({ maxWidth: 260 }).setLatLng(ll).setContent(box).openOn(map);
   }
@@ -1259,16 +1254,15 @@
       fillColor: v.hidden ? "#7d8796" : scaleColour(1 - v.cap / 100) }).addTo(sunLayer);
     var h = hourLabel(file.hours[denaliHour]);
     box.appendChild(el("p", "sun-head", denaliWords(v) + " · " + h.day + " " + h.time));
-    if (!v.hidden) box.appendChild(el("p", "sun-help", "Cloud on the way " + Math.round(Math.max(v.low, v.mid)) + "% · on the mountain " + Math.round(v.cap) + "%"));
-    var shows = v.shows == null ? "" : v.hidden ? " · hills block the view" : " · top " + fmtHeight(Math.round(v.shows / 100) * 100) + " clears the hills";
+    if (!v.hidden) box.appendChild(el("p", "sun-help", "Cloud " + Math.round(Math.max(v.low, v.mid)) + "% on the way · " + Math.round(v.cap) + "% on top"));
+    var shows = v.shows == null ? "" : v.hidden ? " · hills block the view" : " · top " + fmtHeight(Math.round(v.shows / 100) * 100) + " visible";
     box.appendChild(el("p", "sun-help", fmtDist(v.dist) + " · " + Math.round(v.az) + "° " + compassName(v.az) + shows));
     if (!v.hidden) {
       var best = 0, bestI = 0;
       file.hours.forEach(function (iso, i) { var c = denaliView(file, i, p.lat, p.lng).chance; if (c > best) { best = c; bestI = i; } });
       var bh = hourLabel(file.hours[bestI]);
-      box.appendChild(el("p", "sun-key", "Best in the next 2 days: " + bh.day + " " + bh.time + " (" + best + "%)"));
+      box.appendChild(el("p", "sun-key", "Best: " + bh.day + " " + bh.time + " (" + best + "%)"));
     }
-    box.appendChild(el("p", "sun-help", "Tap or drag the pin to any spot. The line is green where the way is clear, red where cloud sits on it."));
     $("map").dataset.denali = v.hidden ? "hidden" : String(v.chance);
   }
 
@@ -1338,7 +1332,6 @@
     L.polyline([[p.lat, p.lng], far], { pane: "sun", color: "#ffd27a", weight: 2, opacity: 0.95, dashArray: "6 6", interactive: false }).addTo(sunLayer);
     L.polyline([[p.lat, p.lng], back], { pane: "sun", color: "#ffd27a", weight: 1.5, opacity: 0.5, dashArray: "2 6", interactive: false }).addTo(sunLayer);
     box.appendChild(el("p", "sun-head", (rising ? "Sunrise " : "Sunset ") + timeOnly(ev.time.toISOString()) + " · " + Math.round(ev.az) + "° " + compassName(ev.az)));
-    box.appendChild(el("p", "sun-help", "Drag the sun pin. Cloud on the coloured bands blocks the light; gaps there let it through."));
     BANDS.forEach(function (bd) {
       var a = horizonKm(bd[0]), b = horizonKm(bd[1]);
       L.polyline([dest(p.lat, p.lng, ev.az, a), dest(p.lat, p.lng, ev.az, b)],
@@ -1457,9 +1450,9 @@
     mapEl.dataset.light = light.state;
     verdict.className = "light-verdict";
     verdict.textContent = "";
-    if (light.state === "loading") { verdict.textContent = "Checking the forecast along the sun's ray…"; bar.textContent = ""; slider.disabled = true; return; }
+    if (light.state === "loading") { verdict.textContent = "Checking…"; bar.textContent = ""; slider.disabled = true; return; }
     if (light.state === "error") {
-      verdict.textContent = "Couldn't download the forecast for this spot. Check your connection and move the pin to try again." +
+      verdict.textContent = "Couldn't load the forecast. Move the pin to retry." +
         (light.error ? " (Open-Meteo said: " + light.error + ")" : "");
       bar.textContent = ""; slider.disabled = true; return;
     }
@@ -1490,7 +1483,7 @@
     verdict.appendChild(document.createTextNode(verdictText(m)));
     if (m.rain >= SkyLight.RAIN_MIN) {
       var rn = fmtRain(m.rain);
-      verdict.appendChild(el("span", "rain-note", " · " + rn.word + " rain at your spot (" + rn.rate + ")"));
+      verdict.appendChild(el("span", "rain-note", " · " + rn.word + " rain"));
     }
     verdict.className = "light-verdict is-" + m.state;
     mapEl.dataset.verdict = m.state + (m.by ? ":" + m.by : "");
@@ -1501,7 +1494,7 @@
     info += sum.edge ? (light.rising ? "first light " : "last light ") + hm(sum.edge) + " · " + sum.minutesLit + " min of light" : "no direct light";
     if (sum.minutesGlow) info += " · " + (light.rising ? "glow from " : "afterglow until ") + hm(sum.glowEdge);
     if (sum.dark) info += " · " + (light.rising ? "dark until " : "dark at ") + hm(sum.dark);
-    info += sum.rainMinutes ? " · rain at your spot from " + hm(sum.rainFrom) + " (up to " + fmtRain(sum.rainMax).rate + ")" : " · dry at your spot";
+    info += sum.rainMinutes ? " · rain from " + hm(sum.rainFrom) : " · dry";
     $("light-info").textContent = info;
     var rings = $("light-rings");
     rings.textContent = "";
@@ -1543,8 +1536,8 @@
     var cv = $("pano"), cap = $("pano-caption");
     if ($("pano-wrap").hidden || !cv.getContext) return;
     if (!pano.grid) {
-      cap.textContent = "Loading the terrain…";
-      panoData().then(function () { if (light.pano) drawPano(m); }, function () { cap.textContent = "The terrain couldn't be loaded. Check your connection."; });
+      cap.textContent = "Loading…";
+      panoData().then(function () { if (light.pano) drawPano(m); }, function () { cap.textContent = "Terrain unavailable."; });
       return;
     }
     var p = light.p, key = p.lat.toFixed(4) + "," + p.lng.toFixed(4);
@@ -1584,11 +1577,9 @@
     var inGrid = pano.grid.at(p.lat, p.lng) !== null, glowN = drawn ? drawn.glow : 0;
     cv.dataset.glow = String(glowN);
     cv.dataset.moon = moonNow ? Math.round(moonNow.az) + "," + Math.round(moonNow.alt) : "";
-    cap.textContent = "Facing " + Math.round(pano.center) + "° " + compassName(pano.center) + ". " +
-      (compass.on ? "Compass on (🧭 to stop). " : "Drag to look around. ") +
-      (glowN ? "Warm ridges: alpenglow. " : "") +
-      (inGrid ? "" : "Terrain covers South-central Alaska only. ") +
-      "Heights ×" + (drawn ? Math.round(drawn.exag * 10) / 10 : pano.exag) + ". Peaks © OpenStreetMap.";
+    cap.textContent = Math.round(pano.center) + "° " + compassName(pano.center) +
+      (compass.on ? " · compass on" : "") + (glowN ? " · alpenglow" : "") + (inGrid ? "" : " · no terrain here") +
+      " · heights ×" + (drawn ? Math.round(drawn.exag * 10) / 10 : pano.exag) + " · peaks © OpenStreetMap";
     cv.dataset.drawn = String(m.ms);
     cv.dataset.peaks = String(pano.vis.length);
   }
@@ -1641,7 +1632,7 @@
     setTimeout(function () {
       if (compass.on && !compass.seen) {
         setCompass(false);
-        cap.textContent = "No compass found. Compass mode needs a phone or tablet with a compass (and, on iPhone, permission for motion and orientation).";
+        cap.textContent = "No compass on this device.";
       }
     }, 2500);
   }
@@ -1651,8 +1642,8 @@
     if (D && typeof D.requestPermission === "function") {   // iPhone and iPad ask first
       D.requestPermission().then(function (r) {
         if (r === "granted") setCompass(true);
-        else $("pano-caption").textContent = "Compass mode needs permission for motion and orientation. Allow it in Safari's settings for this site.";
-      }, function () { $("pano-caption").textContent = "Compass mode needs permission for motion and orientation."; });
+        else $("pano-caption").textContent = "Allow motion access in Safari settings.";
+      }, function () { $("pano-caption").textContent = "Allow motion access to use the compass."; });
     } else setCompass(true);
   }
 
@@ -1818,14 +1809,13 @@
     ctx.fillText("you", X(0), H - 4);
     ctx.strokeStyle = "rgba(233,237,243,0.25)"; ctx.setLineDash([2, 4]); ctx.beginPath();
     ctx.moveTo(X(0), padT); ctx.lineTo(X(0), H - padB); ctx.stroke(); ctx.setLineDash([]);
-    ctx.textAlign = "left"; ctx.fillText("← away from the sun", X(dMin) + 4, padT + 12);
-    ctx.textAlign = "right"; ctx.fillText("toward the sun →", W - padR - 4, padT + 12);
+    ctx.textAlign = "left"; ctx.fillText("← away", X(dMin) + 4, padT + 12);
+    ctx.textAlign = "right"; ctx.fillText("sun →", W - padR - 4, padT + 12);
     ctx.textAlign = "left";
     var dir = Math.round(m.az) + "° " + compassName(m.az);
-    $("section-caption").textContent = "Toward the sun, " + dir + ". " + (m.alt < 0
-      ? "Below the pink line is the Earth's shadow; cloud above it is still lit. " : "") + "Heights ×" +
-      Math.round(((dMax - dMin) * 1000 / (W - padL - padR)) / (SECTION_TOP_M / (H - padT - padB))) + "." +
-      (t ? "" : " Terrain unavailable: showing a sea-level horizon.");
+    $("section-caption").textContent = dir + " · heights ×" +
+      Math.round(((dMax - dMin) * 1000 / (W - padL - padR)) / (SECTION_TOP_M / (H - padT - padB))) +
+      (t ? "" : " · no terrain");
     cv.dataset.drawn = String(m.ms);
   }
 

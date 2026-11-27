@@ -412,3 +412,6 @@ body.full .photo-row { display: none; }
 .pf-btn.alt { background: none; border: 1px solid var(--line); color: var(--text); font-weight: 600; }
 .pf-btn:disabled { opacity: 0.5; cursor: default; }
 body.has-upload #photo-hint { display: none; }
+
+/* the panel-size handle speaks for itself: keep its name for screen readers only */
+#light-size-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

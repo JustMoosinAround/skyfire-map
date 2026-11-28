@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="Install SkyFire: sunrise, sunset, aurora and Denali forecasts for South-central Alaska, on your phone.">
+<title>Get SkyFire</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0d1420">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<style>
+  :root { color-scheme: dark; --bg: #0d1420; --chip: #182234; --text: #e9edf3; --muted: #9aa6b8; --line: #2f3d52; --fire: #ff7a3d; }
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 34rem; margin: 0 auto; padding: max(28px, env(safe-area-inset-top, 0px)) max(18px, env(safe-area-inset-right, 0px)) 40px max(18px, env(safe-area-inset-left, 0px)); }
+  .hero { display: flex; align-items: center; gap: 14px; }
+  .hero img { width: 64px; height: 64px; border-radius: 14px; flex: none; }
+  h1 { margin: 0; font-size: 1.6rem; line-height: 1.2; }
+  .tag { margin: 2px 0 0; color: var(--muted); }
+  .card { margin-top: 22px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--chip); }
+  .card h2 { margin: 0 0 8px; font-size: 1.05rem; }
+  .card ol, .card ul { margin: 0; padding-left: 1.3em; }
+  .card li { margin: 4px 0; }
+  .btn { display: inline-block; appearance: none; border: 0; border-radius: 999px; background: var(--fire); color: #1b0f06; font: 700 1rem system-ui, sans-serif; padding: 12px 22px; text-decoration: none; cursor: pointer; }
+  .btn.alt { background: none; color: var(--text); border: 1px solid var(--line); font-weight: 600; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+  .btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+  .qr { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  .qr img { width: 150px; height: 150px; padding: 8px; background: #fff; border-radius: 10px; flex: none; }
+  .muted { color: var(--muted); font-size: 0.9rem; }
+  .done { color: #7be0a8; font-weight: 600; }
+  [hidden] { display: none !important; }
+  kbd { font: inherit; padding: 0 5px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); }
+</style>
+</head>
+<body>
+<main>
+  <div class="hero">
+    <img src="icons/icon-192.png" alt="">
+    <div>
+      <h1>Get SkyFire</h1>
+      <p class="tag">Sunset, sunrise, aurora and Denali forecasts.</p>
+    </div>
+  </div>
+
+  <section class="card" id="android-app" hidden>
+    <h2>Android app</h2>
+    <div class="row" style="margin-top:0"><a class="btn" id="apk" href="https://github.com/JustMoosinAround/skyfire-map/releases/latest/download/skyfire.apk">Download SkyFire for Android</a></div>
+    <p class="muted" style="margin:10px 0 0">Open <b>skyfire.apk</b>, allow <b>install unknown apps</b> if asked, then tap <b>Install</b>.</p>
+  </section>
+
+  <section class="card" id="android" hidden>
+    <h2>Or add it from Chrome</h2>
+    <p id="android-ready" hidden>Tap the button below.</p>
+    <p id="android-steps" style="margin:0">In Chrome, tap <kbd>⋮</kbd>, then <b>Install app</b>.</p>
+  </section>
+
+  <section class="card" id="ios" hidden>
+    <h2>iPhone</h2>
+    <p style="margin:0">In Safari, tap <b>Share</b>, then <b>Add to Home Screen</b>.</p>
+  </section>
+
+  <section class="card" id="desktop" hidden>
+    <h2>On your phone</h2>
+    <div class="qr">
+      <img src="icons/install-qr.svg" alt="QR code for this page">
+      <p class="muted">Scan this with your phone's camera.</p>
+    </div>
+  </section>
+
+  <div class="row">
+    <button class="btn" id="install" type="button" hidden>Install SkyFire</button>
+    <a class="btn alt" href="./">Open the map</a>
+    <a class="btn alt" href="https://www.ypsak.com/contact" target="_blank" rel="noopener">Send feedback</a>
+  </div>
+  <p class="done" id="installed" hidden>Installed.</p>
+</main>
+<script>
+(function () {
+  "use strict";
+  var ua = navigator.userAgent;
+  var ios = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  var android = /Android/i.test(ua);
+  var standalone = window.matchMedia && window.matchMedia("(display-mode: standalone)").matches;
+  document.getElementById(ios ? "ios" : android ? "android" : "desktop").hidden = false;
+  if (android && !/SkyFireApp/.test(ua)) document.getElementById("android-app").hidden = false;
+  if (standalone) { location.replace("./"); return; }
+  if ("serviceWorker" in navigator && window.isSecureContext) navigator.serviceWorker.register("sw.js").catch(function () {});
+  var prompt = null, btn = document.getElementById("install");
+  window.addEventListener("beforeinstallprompt", function (e) {
+    e.preventDefault();
+    prompt = e;
+    btn.hidden = false;
+    document.getElementById("android-ready").hidden = false;
+    document.getElementById("android-steps").hidden = true;
+  });
+  btn.addEventListener("click", function () {
+    if (!prompt) return;
+    prompt.prompt();
+    prompt.userChoice.then(function (c) {
+      if (c && c.outcome === "accepted") { btn.hidden = true; document.getElementById("installed").hidden = false; }
+      prompt = null;
+    }, function () {});
+  });
+  window.addEventListener("appinstalled", function () { btn.hidden = true; document.getElementById("installed").hidden = false; });
+})();
+</script>
+</body>
+</html>

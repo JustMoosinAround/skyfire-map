@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="Live sunrise, sunset and aurora forecast map for Anchorage and South-central Alaska. See where the sky is likely to light up, updated three times a day.">
+<title>SkyFire</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0d1420">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="style.css?v=22">
+</head>
+<body>
+<header class="site-header">
+  <img class="brand-icon" src="logo.png?v=22" alt="" width="56" height="56">
+  <div class="brand-text">
+    <h1 id="title" class="site-title">SkyFire</h1>
+    <p class="brand-cta">See where tonight's sky will light up.</p>
+  </div>
+  <a id="get-app-btn" class="get-app-btn" href="install.html" target="_blank" rel="noopener">Get the app</a>
+</header>
+
+<main id="app">
+  <p id="unavailable" class="unavailable" hidden>The sky forecast is unavailable right now. Please check back later.</p>
+  <div class="bar-row">
+    <nav id="tabs" class="tabs" role="tablist" aria-label="Forecast maps"></nav>
+    <p id="when" class="when" aria-live="polite"></p>
+  </div>
+  <div id="hours" class="hours" role="group" aria-label="Hour" hidden></div>
+  <p id="stale" class="stale" role="status" hidden></p>
+  <div id="map-wrap" class="map-wrap" hidden>
+    <div id="map" class="map" aria-label="Forecast map. Tap anywhere for the forecast there."></div>
+    <div id="sunbox" class="sunbox" hidden></div>
+    <div class="controls">
+      <button class="ctl" id="btn-install" type="button" title="Install the SkyFire app" hidden>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M8 1.5v8.5M4.5 6.5 8 10l3.5-3.5M2 11.5v3h12v-3"/></svg><span>Install app</span></button>
+      <button class="ctl" id="btn-lights" type="button" aria-pressed="false" title="Light pollution (night lights)">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M8 1.5a4.5 4.5 0 0 0-2.6 8.2V12h5.2V9.7A4.5 4.5 0 0 0 8 1.5zM6 14.5h4"/></svg><span>Lights</span></button>
+      <button class="ctl" id="btn-units" type="button" title="Switch units">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M1.5 11.5h13M3 11.5v-3M6 11.5v-2M9 11.5v-3M12 11.5v-2"/></svg><span id="units-label">mi / ft</span></button>
+      <button class="ctl" id="btn-full" type="button" aria-pressed="false" title="Full screen">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M1.5 5.5v-4h4M10.5 1.5h4v4M14.5 10.5v4h-4M5.5 14.5h-4v-4"/></svg><span>Full screen</span></button>
+      <button class="ctl" id="btn-sun" type="button" aria-pressed="true" title="Sun line">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.4 1.4M11.6 11.6L13 13M3 13l1.4-1.4M11.6 4.4L13 3"/></svg><span id="line-label">Sun line</span></button>
+    </div>
+    <p id="map-note" class="map-note" hidden></p>
+  </div>
+  <section id="light" class="light size-std" aria-label="Light check" hidden>
+    <button id="light-size" class="light-size" type="button" title="Panel size: tap to change">
+      <span class="grip" aria-hidden="true"></span><span id="light-size-label">Standard</span></button>
+    <div id="light-pro" class="light-pro" hidden>
+      <p class="light-pro-title"><span class="pro-badge">Pro</span> Will the light reach you?</p>
+      <p class="light-pro-text">Minute-by-minute light, skyline, alpenglow and moon at your pin.</p>
+      <div class="light-pro-row">
+        <a id="pro-trial" class="btn-pro" href="pro.html">Start free trial</a>
+        <a class="btn-pro alt" href="pro.html#restore">I have a licence</a>
+      </div>
+    </div>
+    <div class="light-head">
+      <p id="light-verdict" class="light-verdict" aria-live="polite"></p>
+      <button id="light-pano-btn" class="light-more" type="button" aria-pressed="false">Panorama</button>
+      <button id="light-section-btn" class="light-more" type="button" aria-pressed="false">Section</button>
+      <button id="light-more" class="light-more" type="button" aria-expanded="false">Details</button>
+    </div>
+    <div id="light-bar" class="light-bar" aria-hidden="true"></div>
+    <div id="rain-bar" class="rain-bar" aria-hidden="true" title="Rain at your spot"></div>
+    <input id="light-slider" class="light-slider" type="range" min="0" max="0" value="0" aria-label="Time">
+    <figure id="pano-wrap" class="section-wrap" hidden>
+      <div class="pano-box">
+        <canvas id="pano" class="pano" role="img" aria-label="Panorama from the pin: the skyline with named peaks, the sun's path and the forecast cloud"></canvas>
+        <div class="pano-ctl">
+          <button id="pano-full" class="pano-btn" type="button" aria-pressed="false" title="Full screen">⛶</button>
+          <button id="pano-compass" class="pano-btn" type="button" aria-pressed="false" title="Compass: point your phone">🧭</button>
+          <button id="pano-sun" class="pano-btn" type="button" title="Face the sun">☀</button>
+          <button id="pano-out" class="pano-btn" type="button" title="Zoom out">−</button>
+          <button id="pano-in" class="pano-btn" type="button" title="Zoom in">+</button>
+        </div>
+      </div>
+      <figcaption id="pano-caption" class="section-caption"></figcaption>
+    </figure>
+    <figure id="section-wrap" class="section-wrap" hidden>
+      <canvas id="section" class="section" role="img" aria-label="Side view of the sun's ray toward the horizon, with the terrain and cloud layers"></canvas>
+      <figcaption id="section-caption" class="section-caption"></figcaption>
+    </figure>
+    <div id="light-details" class="light-details" hidden>
+      <p id="light-info" class="light-info"></p>
+      <p id="light-rings" class="light-rings"></p>
+      <div id="light-models" class="light-models" role="group" aria-label="Forecast model"></div>
+    </div>
+  </section>
+  <section id="space" class="space" aria-label="Space weather now" hidden>
+    <div class="space-now" id="space-now"></div>
+    <p class="space-fc" id="space-fc"></p>
+    <p class="space-note" id="space-note"></p>
+  </section>
+  <section id="moon" class="moon-card" aria-label="The moon" hidden>
+    <canvas id="moon-icon" class="moon-icon" width="64" height="64" role="img" aria-label="Moon phase"></canvas>
+    <div class="moon-text">
+      <p id="moon-name" class="moon-name"></p>
+      <p id="moon-at" class="moon-line"></p>
+      <p id="moon-rs" class="moon-line"></p>
+      <div id="dark-wrap" class="dark-wrap" hidden>
+        <div id="dark-bar" class="dark-bar" aria-hidden="true"></div>
+        <div class="dark-ticks"><span id="dark-start"></span><span id="dark-end"></span></div>
+        <p id="dark-text" class="moon-line"></p>
+      </div>
+      <p id="moon-next" class="moon-line"></p>
+      <p id="moon-note" class="moon-note"></p>
+    </div>
+  </section>
+  <p class="photo-row" id="photo-row">
+    <a class="photo-btn" id="photo-btn" href="https://www.dropbox.com/request/w9qyfhhkx9bqnb2c4g07" target="_blank" rel="noopener">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 5.5h2.5l1.2-2h4.6l1.2 2H14v8H2z"/><circle cx="8" cy="9.3" r="2.6"/></svg>
+      Send a sky photo</a>
+    <span class="photo-note" id="photo-hint">Android: share from the Dropbox app to keep the location.</span>
+  </p>
+  <dialog id="photo-dlg" class="photo-dlg" aria-labelledby="pf-title">
+    <form id="photo-form" novalidate>
+      <h2 id="pf-title" class="pf-title">Send a sky photo</h2>
+      <label class="pf-field">Photos
+        <input id="pf-files" type="file" accept="image/*" multiple></label>
+      <fieldset class="pf-field pf-place">
+        <legend>Where?</legend>
+        <label><input type="radio" name="pf-place" value="pin" checked> <span id="pf-pin-text">Map pin</span></label>
+        <label><input type="radio" name="pf-place" value="gps"> My location</label>
+      </fieldset>
+      <label class="pf-field">Name (optional)
+        <input id="pf-name" maxlength="40" autocomplete="name"></label>
+      <p id="pf-status" class="pf-status" role="status" aria-live="polite"></p>
+      <div class="pf-row">
+        <button type="button" id="pf-cancel" class="pf-btn alt">Close</button>
+        <button type="submit" id="pf-send" class="pf-btn">Send</button>
+      </div>
+    </form>
+  </dialog>
+  <section id="legend" class="legend" aria-label="Chance of colour" hidden>
+    <div id="key-bar" class="key-bar"></div>
+    <div id="key-ticks" class="key-ticks"></div>
+  </section>
+</main>
+
+<footer id="footer" class="site-footer" hidden>
+  <p class="how">Tap the map to move the pin.</p>
+  <p class="small"><span class="site-credits"></span><span id="pro-link" hidden> · <a class="get-app" href="pro.html">SkyFire Pro</a></span> · <a class="get-app" href="terms.html">Terms</a> · <a class="get-app" href="privacy.html">Privacy</a> · <a id="contact" class="get-app" href="https://www.ypsak.com/contact" target="_top" rel="noopener">Contact me</a></p>
+</footer>
+
+<script src="vendor/leaflet/leaflet.js"></script>
+<script src="lightcheck.js?v=22"></script>
+<script src="panorama.js?v=22"></script>
+<script src="moon.js?v=22"></script>
+<script src="pro.js?v=22"></script>
+<script src="app.js?v=22"></script>
+</body>
+</html>
